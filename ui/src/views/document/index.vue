@@ -198,6 +198,15 @@
               </template>
             </el-table-column>
             <el-table-column
+              prop="sensitivity_level"
+              :label="$t('common.sensitivity.field')"
+              width="110"
+            >
+              <template #default="{ row }">
+                <SensitivityBadge :level="row.sensitivity_level" />
+              </template>
+            </el-table-column>
+            <el-table-column
               prop="status"
               :label="$t('views.document.fileStatus.label')"
               width="120"
@@ -824,6 +833,7 @@ import { hitHandlingMethod } from '@/enums/document'
 import { MsgSuccess, MsgConfirm, MsgError, MsgAlert } from '@/utils/message'
 import useStore from '@/stores'
 import StatusValue from '@/views/document/component/Status.vue'
+import SensitivityBadge from '@/components/sensitivity-badge/index.vue'
 import GenerateRelatedDialog from '@/components/generate-related-dialog/index.vue'
 import EmbeddingContentDialog from '@/views/document/component/EmbeddingContentDialog.vue'
 import { TaskType, State } from '@/utils/status'

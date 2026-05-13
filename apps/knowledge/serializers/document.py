@@ -141,6 +141,12 @@ class DocumentEditInstanceSerializer(serializers.Serializer):
 
     is_active = serializers.BooleanField(required=False, label=_('document is active'))
 
+    sensitivity_level = serializers.CharField(required=False, validators=[
+        validators.RegexValidator(regex=re.compile("^public|internal|confidential|secret$"),
+                                  message=_('Sensitivity level only supports public|internal|confidential|secret'),
+                                  code=500)
+    ], label=_('sensitivity level'))
+
     @staticmethod
     def get_meta_valid_map():
         knowledge_meta_valid_map = {
@@ -670,7 +676,8 @@ class DocumentSerializers(serializers.Serializer):
             _document = QuerySet(Document).get(id=self.data.get("document_id"))
             if with_valid:
                 DocumentEditInstanceSerializer(data=instance).is_valid(document=_document)
-            update_keys = ['name', 'is_active', 'hit_handling_method', 'directly_return_similarity', 'meta']
+            update_keys = ['name', 'is_active', 'hit_handling_method', 'directly_return_similarity', 'meta',
+                           'sensitivity_level']
             for update_key in update_keys:
                 if update_key in instance and instance.get(update_key) is not None:
                     _document.__setattr__(update_key, instance.get(update_key))

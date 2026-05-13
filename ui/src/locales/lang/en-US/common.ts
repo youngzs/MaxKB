@@ -153,4 +153,12 @@ export default {
   sourceType: 'Source type',
   knowledgeImportTip: 'Knowledge base imported successfully. Documents have not been vectorized yet. Please configure the embedding model and vectorize the documents.',
   import: 'Import',
+  sensitivity: {
+    public: 'Public',
+    internal: 'Internal',
+    confidential: 'Confidential',
+    secret: 'Secret',
+    field: 'Sensitivity',
+    helpText: 'Document sensitivity level — hard-controls external sharing eligibility.',
+  },
 }

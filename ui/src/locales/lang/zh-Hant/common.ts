@@ -152,4 +152,12 @@ export default {
   sourceType: '資源類型',
   knowledgeImportTip: '匯入建立知識庫成功，文件資料尚未向量化，請先設定知識庫的向量模型，並對文件進行向量化操作',
   import: '导入',
+  sensitivity: {
+    public: '公開',
+    internal: '內部',
+    confidential: '機密',
+    secret: '涉密',
+    field: '敏感等級',
+    helpText: '文件敏感等級 — 嚴格控制對外分享許可',
+  },
 }

@@ -12,6 +12,7 @@ from django.dispatch import receiver
 from mptt.fields import TreeForeignKey
 from mptt.models import MPTTModel
 
+from common.constants.sensitivity_constants import SensitivityLevel
 from common.db.sql_execute import select_one
 from common.mixins.app_model_mixin import AppModelMixin
 from common.utils.common import get_sha256_hash
@@ -192,6 +193,15 @@ class Document(AppModelMixin):
     directly_return_similarity = models.FloatField(verbose_name='直接回答相似度', default=0.9)
 
     meta = models.JSONField(verbose_name="元数据", default=dict)
+
+    sensitivity_level = models.CharField(
+        verbose_name='敏感等级',
+        max_length=20,
+        choices=SensitivityLevel.choices,
+        default=SensitivityLevel.INTERNAL,
+        db_index=True,
+        help_text='Document sensitivity level — hard-controls external sharing eligibility.',
+    )
 
     class Meta:
         db_table = "document"
