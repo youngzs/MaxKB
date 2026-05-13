@@ -65,4 +65,55 @@ urlpatterns = [
         views.DocumentGenerationDownloadView.as_view(),
         name='generation_download',
     ),
+    # ---- Gate 4 Track A: materials task ----
+    path(
+        'workspace/<uuid:workspace_id>/materials-task',
+        views.MaterialsTaskListView.as_view(),
+        name='materials_task_list',
+    ),
+    path(
+        'workspace/<uuid:workspace_id>/materials-task/<uuid:pk>',
+        views.MaterialsTaskDetailView.as_view(),
+        name='materials_task_detail',
+    ),
+    path(
+        'workspace/<uuid:workspace_id>/materials-task/<uuid:pk>/parse',
+        views.MaterialsTaskParseView.as_view(),
+        name='materials_task_parse',
+    ),
+    path(
+        'workspace/<uuid:workspace_id>/materials-task/<uuid:pk>/match',
+        views.MaterialsTaskMatchView.as_view(),
+        name='materials_task_match',
+    ),
+    path(
+        'workspace/<uuid:workspace_id>/materials-task/<uuid:pk>/selection',
+        views.MaterialsTaskSelectionView.as_view(),
+        name='materials_task_selection',
+    ),
+    path(
+        'workspace/<uuid:workspace_id>/materials-task/<uuid:pk>/summarize',
+        views.MaterialsTaskSummarizeView.as_view(),
+        name='materials_task_summarize',
+    ),
+    path(
+        'workspace/<uuid:workspace_id>/materials-task/<uuid:pk>/pack',
+        views.MaterialsTaskPackView.as_view(),
+        name='materials_task_pack',
+    ),
+    path(
+        'workspace/<uuid:workspace_id>/materials-task/<uuid:pk>/submit-review',
+        views.MaterialsTaskSubmitReviewView.as_view(),
+        name='materials_task_submit_review',
+    ),
+    path(
+        'workspace/<uuid:workspace_id>/materials-task/<uuid:pk>/review',
+        views.MaterialsTaskReviewView.as_view(),
+        name='materials_task_review',
+    ),
+    path(
+        'workspace/<uuid:workspace_id>/materials-task/<uuid:pk>/zip',
+        views.MaterialsTaskZipDownloadView.as_view(),
+        name='materials_task_zip',
+    ),
 ]

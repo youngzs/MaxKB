@@ -15,6 +15,13 @@ from .document_template import (
     DocumentTemplateUpdateSerializer,
     DocumentTemplateUploadSerializer,
 )
+from .materials_task import (
+    MaterialsTaskCreateSerializer,
+    MaterialsTaskOutputSerializer,
+    MaterialsTaskPackSerializer,
+    MaterialsTaskReviewSerializer,
+    MaterialsTaskUpdateSelectionSerializer,
+)
 from .project import FinanceProjectInputSerializer, FinanceProjectOutputSerializer
 
 __all__ = [
@@ -27,4 +34,9 @@ __all__ = [
     'DocumentGenerationCreateSerializer',
     'DocumentGenerationOutputSerializer',
     'AIFillRequestSerializer',
+    'MaterialsTaskCreateSerializer',
+    'MaterialsTaskOutputSerializer',
+    'MaterialsTaskPackSerializer',
+    'MaterialsTaskReviewSerializer',
+    'MaterialsTaskUpdateSelectionSerializer',
 ]

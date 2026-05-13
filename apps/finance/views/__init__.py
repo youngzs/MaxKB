@@ -14,6 +14,18 @@ from .document_generation import (
     DocumentGenerationRevokeView,
 )
 from .document_template import DocumentTemplateDetailView, DocumentTemplateListView
+from .materials_task import (
+    MaterialsTaskDetailView,
+    MaterialsTaskListView,
+    MaterialsTaskMatchView,
+    MaterialsTaskPackView,
+    MaterialsTaskParseView,
+    MaterialsTaskReviewView,
+    MaterialsTaskSelectionView,
+    MaterialsTaskSubmitReviewView,
+    MaterialsTaskSummarizeView,
+    MaterialsTaskZipDownloadView,
+)
 from .ping import FinancePingView
 from .project import FinanceProjectDetailView, FinanceProjectListView
 
@@ -30,4 +42,14 @@ __all__ = [
     'DocumentGenerationPreviewView',
     'DocumentGenerationDownloadView',
     'DocumentGenerationAIFillView',
+    'MaterialsTaskListView',
+    'MaterialsTaskDetailView',
+    'MaterialsTaskParseView',
+    'MaterialsTaskMatchView',
+    'MaterialsTaskSelectionView',
+    'MaterialsTaskSummarizeView',
+    'MaterialsTaskPackView',
+    'MaterialsTaskSubmitReviewView',
+    'MaterialsTaskReviewView',
+    'MaterialsTaskZipDownloadView',
 ]
