@@ -9,6 +9,7 @@ import usePromptStore from './modules/prompt'
 import useApplicationStore from './modules/application'
 import useChatUserStore from './modules/chat-user'
 import useToolStore from './modules/tool'
+import useFinanceProjectStore from './modules/finance-project'
 const useStore = () => ({
   common: useCommonStore(),
   login: useLoginStore(),
@@ -21,6 +22,7 @@ const useStore = () => ({
   application: useApplicationStore(),
   chatUser: useChatUserStore(),
   tool: useToolStore(),
+  financeProject: useFinanceProjectStore(),
 })
 
 export default useStore
