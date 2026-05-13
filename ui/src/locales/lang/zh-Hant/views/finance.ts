@@ -1,0 +1,27 @@
+export default {
+  title: '融資工作台',
+  overview: '工作台首頁',
+  project: '融資項目',
+  materials: '材料整理',
+  documents: '流程文件',
+  feasibility: '可行性初判',
+  progress: '進度歸集',
+  intel: '資訊推送',
+  template: '範本庫',
+  audit: '稽核日誌',
+  comingSoon: '敬請期待',
+  planning: '規劃中',
+  overviewDesc: '一站式管理融資項目的材料、文件、進度與合規稽核',
+  cards: {
+    project: { title: '項目管理', desc: '管理融資項目檔案、狀態與關聯知識庫' },
+    materials: { title: '材料整理', desc: '基於清單從知識庫智慧打包材料，審核後發送' },
+    documents: { title: '流程文件', desc: '基於範本自動生成內部匯報、上會等公文' },
+    feasibility: { title: '可行性初判', desc: '基於監管規則與公司畫像輔助判斷' },
+    progress: { title: '進度歸集', desc: '彙總各項目進度，自動識別風險項' },
+  },
+  action: {
+    enter: '進入',
+    disabled: '暫未開放',
+    back: '返回工作台首頁',
+  },
+}

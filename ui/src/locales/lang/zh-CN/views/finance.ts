@@ -1,0 +1,27 @@
+export default {
+  title: '融资工作台',
+  overview: '工作台首页',
+  project: '融资项目',
+  materials: '材料整理',
+  documents: '流程文档',
+  feasibility: '可行性初判',
+  progress: '进度归集',
+  intel: '资讯推送',
+  template: '模板库',
+  audit: '审计日志',
+  comingSoon: '敬请期待',
+  planning: '规划中',
+  overviewDesc: '一站式管理融资项目的材料、文档、进度与合规审计',
+  cards: {
+    project: { title: '项目管理', desc: '管理融资项目档案、状态与关联知识库' },
+    materials: { title: '材料整理', desc: '基于清单从知识库智能打包材料，审核后发送' },
+    documents: { title: '流程文档', desc: '基于模板自动生成内部汇报、上会等公文' },
+    feasibility: { title: '可行性初判', desc: '基于监管规则与公司画像辅助判断' },
+    progress: { title: '进度归集', desc: '汇总各项目进度，自动识别风险项' },
+  },
+  action: {
+    enter: '进入',
+    disabled: '暂未开放',
+    back: '返回工作台首页',
+  },
+}
