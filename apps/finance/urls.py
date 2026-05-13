@@ -7,23 +7,23 @@ app_name = 'finance'
 urlpatterns = [
     path('ping', views.FinancePingView.as_view(), name='finance_ping'),
     path(
-        'workspace/<uuid:workspace_id>/project',
+        'workspace/<str:workspace_id>/project',
         views.FinanceProjectListView.as_view(),
         name='project_list',
     ),
     path(
-        'workspace/<uuid:workspace_id>/project/<uuid:pk>',
+        'workspace/<str:workspace_id>/project/<uuid:pk>',
         views.FinanceProjectDetailView.as_view(),
         name='project_detail',
     ),
     # ---- Gate 3 Track A: document templates ----
     path(
-        'workspace/<uuid:workspace_id>/template',
+        'workspace/<str:workspace_id>/template',
         views.DocumentTemplateListView.as_view(),
         name='template_list',
     ),
     path(
-        'workspace/<uuid:workspace_id>/template/<uuid:pk>',
+        'workspace/<str:workspace_id>/template/<uuid:pk>',
         views.DocumentTemplateDetailView.as_view(),
         name='template_detail',
     ),
@@ -31,88 +31,88 @@ urlpatterns = [
     # NOTE: the `ai-fill` collection route is registered BEFORE the
     # `<uuid:pk>` routes so it isn't shadowed by the dispatcher.
     path(
-        'workspace/<uuid:workspace_id>/generation/ai-fill',
+        'workspace/<str:workspace_id>/generation/ai-fill',
         views.DocumentGenerationAIFillView.as_view(),
         name='generation_ai_fill',
     ),
     path(
-        'workspace/<uuid:workspace_id>/generation',
+        'workspace/<str:workspace_id>/generation',
         views.DocumentGenerationListView.as_view(),
         name='generation_list',
     ),
     path(
-        'workspace/<uuid:workspace_id>/generation/<uuid:pk>',
+        'workspace/<str:workspace_id>/generation/<uuid:pk>',
         views.DocumentGenerationDetailView.as_view(),
         name='generation_detail',
     ),
     path(
-        'workspace/<uuid:workspace_id>/generation/<uuid:pk>/confirm',
+        'workspace/<str:workspace_id>/generation/<uuid:pk>/confirm',
         views.DocumentGenerationConfirmView.as_view(),
         name='generation_confirm',
     ),
     path(
-        'workspace/<uuid:workspace_id>/generation/<uuid:pk>/revoke',
+        'workspace/<str:workspace_id>/generation/<uuid:pk>/revoke',
         views.DocumentGenerationRevokeView.as_view(),
         name='generation_revoke',
     ),
     path(
-        'workspace/<uuid:workspace_id>/generation/<uuid:pk>/preview',
+        'workspace/<str:workspace_id>/generation/<uuid:pk>/preview',
         views.DocumentGenerationPreviewView.as_view(),
         name='generation_preview',
     ),
     path(
-        'workspace/<uuid:workspace_id>/generation/<uuid:pk>/download',
+        'workspace/<str:workspace_id>/generation/<uuid:pk>/download',
         views.DocumentGenerationDownloadView.as_view(),
         name='generation_download',
     ),
     # ---- Gate 4 Track A: materials task ----
     path(
-        'workspace/<uuid:workspace_id>/materials-task',
+        'workspace/<str:workspace_id>/materials-task',
         views.MaterialsTaskListView.as_view(),
         name='materials_task_list',
     ),
     path(
-        'workspace/<uuid:workspace_id>/materials-task/<uuid:pk>',
+        'workspace/<str:workspace_id>/materials-task/<uuid:pk>',
         views.MaterialsTaskDetailView.as_view(),
         name='materials_task_detail',
     ),
     path(
-        'workspace/<uuid:workspace_id>/materials-task/<uuid:pk>/parse',
+        'workspace/<str:workspace_id>/materials-task/<uuid:pk>/parse',
         views.MaterialsTaskParseView.as_view(),
         name='materials_task_parse',
     ),
     path(
-        'workspace/<uuid:workspace_id>/materials-task/<uuid:pk>/match',
+        'workspace/<str:workspace_id>/materials-task/<uuid:pk>/match',
         views.MaterialsTaskMatchView.as_view(),
         name='materials_task_match',
     ),
     path(
-        'workspace/<uuid:workspace_id>/materials-task/<uuid:pk>/selection',
+        'workspace/<str:workspace_id>/materials-task/<uuid:pk>/selection',
         views.MaterialsTaskSelectionView.as_view(),
         name='materials_task_selection',
     ),
     path(
-        'workspace/<uuid:workspace_id>/materials-task/<uuid:pk>/summarize',
+        'workspace/<str:workspace_id>/materials-task/<uuid:pk>/summarize',
         views.MaterialsTaskSummarizeView.as_view(),
         name='materials_task_summarize',
     ),
     path(
-        'workspace/<uuid:workspace_id>/materials-task/<uuid:pk>/pack',
+        'workspace/<str:workspace_id>/materials-task/<uuid:pk>/pack',
         views.MaterialsTaskPackView.as_view(),
         name='materials_task_pack',
     ),
     path(
-        'workspace/<uuid:workspace_id>/materials-task/<uuid:pk>/submit-review',
+        'workspace/<str:workspace_id>/materials-task/<uuid:pk>/submit-review',
         views.MaterialsTaskSubmitReviewView.as_view(),
         name='materials_task_submit_review',
     ),
     path(
-        'workspace/<uuid:workspace_id>/materials-task/<uuid:pk>/review',
+        'workspace/<str:workspace_id>/materials-task/<uuid:pk>/review',
         views.MaterialsTaskReviewView.as_view(),
         name='materials_task_review',
     ),
     path(
-        'workspace/<uuid:workspace_id>/materials-task/<uuid:pk>/zip',
+        'workspace/<str:workspace_id>/materials-task/<uuid:pk>/zip',
         views.MaterialsTaskZipDownloadView.as_view(),
         name='materials_task_zip',
     ),
