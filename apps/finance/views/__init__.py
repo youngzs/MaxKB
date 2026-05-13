@@ -4,4 +4,6 @@
     @file： __init__.py
     @desc: finance views package
 """
-from .ping import *
+from .ping import FinancePingView
+
+__all__ = ['FinancePingView']
