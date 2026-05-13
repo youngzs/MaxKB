@@ -25,7 +25,7 @@ export const listTemplates: (
   params?: TemplateListParams,
   loading?: Ref<boolean>,
 ) => Promise<Result<PageResult<Template>>> = (workspaceId, params, loading) => {
-  return get(`${buildPrefix(workspaceId)}/`, params, loading)
+  return get(`${buildPrefix(workspaceId)}`, params, loading)
 }
 
 /**
@@ -56,7 +56,7 @@ export const uploadTemplate: (
   fd.append('file', file)
   fd.append('name', name)
   fd.append('scenario', scenario)
-  return post(`${buildPrefix(workspaceId)}/`, fd, undefined, loading)
+  return post(`${buildPrefix(workspaceId)}`, fd, undefined, loading)
 }
 
 /**

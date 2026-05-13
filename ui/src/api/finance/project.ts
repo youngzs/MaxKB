@@ -20,7 +20,7 @@ export const listProjects: (
   params?: ListParams,
   loading?: Ref<boolean>,
 ) => Promise<Result<PageResult<Project>>> = (workspaceId, params, loading) => {
-  return get(`${buildPrefix(workspaceId)}/`, params, loading)
+  return get(`${buildPrefix(workspaceId)}`, params, loading)
 }
 
 /**
@@ -42,7 +42,7 @@ export const createProject: (
   body: ProjectInput,
   loading?: Ref<boolean>,
 ) => Promise<Result<Project>> = (workspaceId, body, loading) => {
-  return post(`${buildPrefix(workspaceId)}/`, body, undefined, loading)
+  return post(`${buildPrefix(workspaceId)}`, body, undefined, loading)
 }
 
 /**

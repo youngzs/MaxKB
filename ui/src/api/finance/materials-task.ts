@@ -30,7 +30,7 @@ export const listTasks: (
   params,
   loading,
 ) => {
-  return get(`${buildPrefix(workspaceId)}/`, params, loading)
+  return get(`${buildPrefix(workspaceId)}`, params, loading)
 }
 
 /**
@@ -69,7 +69,7 @@ export const createTask: (
   if (body.file) {
     fd.append('file', body.file)
   }
-  return post(`${buildPrefix(workspaceId)}/`, fd, undefined, loading)
+  return post(`${buildPrefix(workspaceId)}`, fd, undefined, loading)
 }
 
 /**

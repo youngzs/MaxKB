@@ -27,7 +27,7 @@ export const listGenerations: (
   params?: GenerationListParams,
   loading?: Ref<boolean>,
 ) => Promise<Result<PageResult<Generation>>> = (workspaceId, params, loading) => {
-  return get(`${buildPrefix(workspaceId)}/`, params, loading)
+  return get(`${buildPrefix(workspaceId)}`, params, loading)
 }
 
 /**
@@ -49,7 +49,7 @@ export const createGeneration: (
   body: GenerationCreate,
   loading?: Ref<boolean>,
 ) => Promise<Result<Generation>> = (workspaceId, body, loading) => {
-  return post(`${buildPrefix(workspaceId)}/`, body, undefined, loading)
+  return post(`${buildPrefix(workspaceId)}`, body, undefined, loading)
 }
 
 /**
