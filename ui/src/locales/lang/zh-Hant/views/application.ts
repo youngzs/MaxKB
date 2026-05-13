@@ -24,7 +24,7 @@ export default {
   tip: {
     publishSuccess: '發布成功',
     ExportError: '匯出失敗',
-    professionalMessage: '社群版最多支援 5 個智能體，如需擁有更多智能體，請升級為專業版。',
+    professionalMessage: '當前部署最多支援 5 個智能體，已達上限，請聯絡管理員處理。',
     saveErrorMessage: '儲存失敗，請檢查輸入或稍後再試',
     loadingErrorMessage: '載入配置失敗，請檢查輸入或稍後再試',
     noDocPermission: '無文檔創建權限',

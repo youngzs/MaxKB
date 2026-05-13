@@ -1,6 +1,6 @@
 <template>
   <div class="chat-entry p-16-24" v-loading="loading">
-    <!-- 头部：标题 + 搜索 -->
+    <!-- 头部 -->
     <div class="chat-entry__header flex-between mb-16">
       <div>
         <h4>{{ $t('views.chatEntry.title') }}</h4>
@@ -16,14 +16,55 @@
       </el-input>
     </div>
 
-    <el-alert
-      v-if="filteredList.length > 0"
-      class="mb-16"
-      :title="$t('views.chatEntry.hint.onlyPublished')"
-      type="info"
-      :closable="false"
-      show-icon
-    />
+    <!-- 最近使用 -->
+    <div v-if="recentList.length > 0" class="mb-24">
+      <div class="flex align-center mb-12">
+        <AppIcon iconName="app-history-outlined" class="mr-8 color-secondary" />
+        <h5 class="m-0">{{ $t('views.chatEntry.recent.title') }}</h5>
+        <el-button
+          link
+          size="small"
+          class="ml-auto"
+          @click="clearRecent"
+        >
+          {{ $t('views.chatEntry.recent.clear') }}
+        </el-button>
+      </div>
+      <el-row :gutter="12">
+        <el-col
+          v-for="item in recentList"
+          :key="'recent-' + item.id"
+          :xs="12" :sm="8" :md="6" :lg="4" :xl="4"
+          class="mb-12"
+        >
+          <div
+            class="chat-card chat-card--mini"
+            @click="toChat(item)"
+            tabindex="0"
+            role="button"
+          >
+            <el-avatar shape="square" :size="32" class="mr-8">
+              <img v-if="item.icon" :src="item.icon" />
+              <AppIcon v-else iconName="app-agent" />
+            </el-avatar>
+            <div class="chat-card__title-block flex-1">
+              <div class="chat-card__title">{{ item.name }}</div>
+              <el-text class="color-secondary" size="small">{{ relativeTime(item.lastChatAt) }}</el-text>
+            </div>
+          </div>
+        </el-col>
+      </el-row>
+    </div>
+
+    <!-- 筛选 -->
+    <div class="flex align-center mb-12">
+      <el-radio-group v-model="typeFilter" size="small">
+        <el-radio-button value="all">{{ $t('views.chatEntry.filter.all') }}（{{ baseList.length }}）</el-radio-button>
+        <el-radio-button value="SIMPLE">{{ $t('views.chatEntry.card.simple') }}（{{ countByType('SIMPLE') }}）</el-radio-button>
+        <el-radio-button value="WORK_FLOW">{{ $t('views.chatEntry.card.workflow') }}（{{ countByType('WORK_FLOW') }}）</el-radio-button>
+      </el-radio-group>
+      <el-text type="info" size="small" class="ml-auto">{{ $t('views.chatEntry.hint.onlyPublished') }}</el-text>
+    </div>
 
     <!-- 卡片网格 -->
     <el-row :gutter="16" v-if="filteredList.length > 0">
@@ -42,7 +83,7 @@
         >
           <div class="chat-card__head flex align-center">
             <el-avatar shape="square" :size="40" class="mr-8">
-              <img v-if="item.icon" :src="resolveIcon(item.icon)" />
+              <img v-if="item.icon" :src="item.icon" />
               <AppIcon v-else iconName="app-agent" />
             </el-avatar>
             <div class="chat-card__title-block flex-1">
@@ -60,7 +101,7 @@
           </div>
 
           <div class="chat-card__desc" :title="item.desc || ''">
-            {{ item.desc || ' ' }}
+            {{ item.desc || ' ' }}
           </div>
 
           <div class="chat-card__footer flex-between">
@@ -77,7 +118,10 @@
     </el-row>
 
     <!-- 空态 -->
-    <el-empty v-if="!loading && filteredList.length === 0" :description="emptyDescription">
+    <el-empty
+      v-if="!loading && filteredList.length === 0"
+      :description="emptyDescription"
+    >
       <template #image>
         <AppIcon iconName="app-user-chat" style="font-size: 60px; color: var(--el-color-info);" />
       </template>
@@ -100,20 +144,25 @@ import useStore from '@/stores'
 import { t } from '@/locales'
 
 const router = useRouter()
-const { application } = useStore()
+const { application, user } = useStore()
 
 const loading = ref(false)
 const search = ref('')
-const list = ref<any[]>([])
+const typeFilter = ref<'all' | 'SIMPLE' | 'WORK_FLOW'>('all')
+const baseList = ref<any[]>([]) // 已发布的全集
+const recentList = ref<any[]>([]) // 最近使用（含 lastChatAt）
+
+// 「最近使用」最大显示数量
+const RECENT_MAX = 6
+// localStorage key（按 workspace 分桶，多 workspace 不会互相串）
+const recentKey = computed(() => `chat-entry:recent:${user.getWorkspaceId() || 'default'}`)
 
 function isWorkflow(type: string) {
   return type === 'WORK_FLOW'
 }
 
-function resolveIcon(icon: string) {
-  if (!icon) return ''
-  // 后端返回的图标可能是相对路径 './oss/file/<uuid>' 或绝对 URL
-  return icon
+function countByType(t: string) {
+  return baseList.value.filter((x) => x.type === t).length
 }
 
 function updatedLabel(item: any) {
@@ -126,39 +175,104 @@ function updatedLabel(item: any) {
   }
 }
 
+function relativeTime(ts: number) {
+  if (!ts) return ''
+  const diff = Date.now() - ts
+  const m = Math.floor(diff / 60000)
+  if (m < 1) return t('views.chatEntry.recent.justNow')
+  if (m < 60) return t('views.chatEntry.recent.minutesAgo', { n: m })
+  const h = Math.floor(m / 60)
+  if (h < 24) return t('views.chatEntry.recent.hoursAgo', { n: h })
+  const d = Math.floor(h / 24)
+  if (d < 30) return t('views.chatEntry.recent.daysAgo', { n: d })
+  return new Date(ts).toLocaleDateString()
+}
+
 const filteredList = computed(() => {
   const q = search.value.trim().toLowerCase()
-  if (!q) return list.value
-  return list.value.filter((x) => (x.name || '').toLowerCase().includes(q))
+  let list = baseList.value
+  if (typeFilter.value !== 'all') {
+    list = list.filter((x) => x.type === typeFilter.value)
+  }
+  if (q) {
+    list = list.filter((x) => (x.name || '').toLowerCase().includes(q))
+  }
+  return list
 })
 
-const emptyDescription = computed(() => t('views.chatEntry.empty.noPublished'))
+const emptyDescription = computed(() =>
+  search.value.trim()
+    ? t('views.chatEntry.empty.noMatch')
+    : t('views.chatEntry.empty.noPublished'),
+)
 
 async function loadList() {
   loading.value = true
   try {
     const res: any = await ApplicationApi.getAllApplication({} as any, loading)
     const all: any[] = Array.isArray(res?.data) ? res.data : []
-    // 仅展示已发布的智能体（is_publish === true）。
-    // 后端 API 暂无 publish_status 过滤参数（实际上 search_form 走的是 list 路径），
-    // 这里前端过滤已经够用，覆盖所有应用列表场景。
-    list.value = all.filter((x) => x.is_publish === true)
+    baseList.value = all.filter((x) => x.is_publish === true)
+    rebuildRecentList()
   } catch (e) {
-    list.value = []
+    baseList.value = []
   } finally {
     loading.value = false
   }
 }
 
+function readRecentEntries(): Array<{ id: string; lastChatAt: number }> {
+  try {
+    const raw = localStorage.getItem(recentKey.value)
+    if (!raw) return []
+    const parsed = JSON.parse(raw)
+    if (!Array.isArray(parsed)) return []
+    return parsed.filter((x) => x && x.id && typeof x.lastChatAt === 'number')
+  } catch (e) {
+    return []
+  }
+}
+
+function writeRecentEntries(entries: Array<{ id: string; lastChatAt: number }>) {
+  try {
+    localStorage.setItem(recentKey.value, JSON.stringify(entries.slice(0, RECENT_MAX)))
+  } catch (e) {
+    // 配额满了就放弃，不影响主流程
+  }
+}
+
+function rebuildRecentList() {
+  const entries = readRecentEntries()
+  // 把 entry 与最新的应用元数据合并（应用可能已被改名/删除）
+  recentList.value = entries
+    .map((e) => {
+      const app = baseList.value.find((a) => a.id === e.id)
+      return app ? { ...app, lastChatAt: e.lastChatAt } : null
+    })
+    .filter((x): x is any => x !== null)
+    .sort((a, b) => b.lastChatAt - a.lastChatAt)
+    .slice(0, RECENT_MAX)
+}
+
+function recordRecent(appId: string) {
+  const entries = readRecentEntries().filter((e) => e.id !== appId)
+  entries.unshift({ id: appId, lastChatAt: Date.now() })
+  writeRecentEntries(entries)
+  rebuildRecentList()
+}
+
+function clearRecent() {
+  try { localStorage.removeItem(recentKey.value) } catch (e) {}
+  recentList.value = []
+}
+
 function toChat(row: any) {
-  // 复用 application/index.vue 的 toChat 行为：拿到 access_token → 新页签打开
+  // 复用 application/index.vue 的 toChat 逻辑
   const api =
     row.type === 'WORK_FLOW'
       ? (id: string) => ApplicationApi.getApplicationDetail(id)
       : (id: string) => Promise.resolve({ data: row })
 
   api(row.id).then((ok: any) => {
-    // 工作流应用可能有 API 输入字段，拼成 query string；简单应用无此需求
     let aips: Array<{ name: string; value: any }> = []
     try {
       const baseNodes = (ok?.data?.work_flow?.nodes || []).filter(
@@ -192,6 +306,7 @@ function toChat(row: any) {
     ApplicationApi.getAccessToken(row.id, loading).then((res: any) => {
       const accessToken = res?.data?.access_token
       if (!accessToken) return
+      recordRecent(row.id)
       const url = application.location + accessToken + qs
       window.open(url)
     })
@@ -229,6 +344,12 @@ onMounted(() => {
   display: flex;
   flex-direction: column;
   outline: none;
+
+  &--mini {
+    padding: 10px 12px;
+    flex-direction: row;
+    align-items: center;
+  }
 
   &:hover,
   &:focus {

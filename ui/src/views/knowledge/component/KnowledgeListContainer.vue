@@ -448,7 +448,7 @@ import AuthorizedWorkspace from '@/views/system-shared/AuthorizedWorkspaceDialog
 import ResourceAuthorizationDrawer from '@/components/resource-authorization-drawer/index.vue'
 import TemplateStoreDialog from '@/views/knowledge/template-store/TemplateStoreDialog.vue'
 import ResourceMappingDrawer from '@/components/resource_mapping/index.vue'
-import { MsgSuccess, MsgConfirm } from '@/utils/message'
+import { MsgSuccess, MsgConfirm, MsgAlert } from '@/utils/message'
 import { numberFormat, i18n_name } from '@/utils/common'
 import { dateFormat } from '@/utils/time'
 import { SourceTypeEnum } from '@/enums/common'
@@ -701,12 +701,7 @@ function importKnowledgeBundle(file: any) {
     })
     .catch((e: any) => {
       if (e.code === 400) {
-        MsgConfirm(t('common.tip'), t('views.application.tip.professionalMessage'), {
-          cancelButtonText: t('common.confirm'),
-          confirmButtonText: t('common.professional'),
-        }).then(() => {
-          window.open('https://maxkb.cn/pricing.html', '_blank')
-        })
+        MsgAlert(t('common.tip'), t('views.application.tip.professionalMessage'))
       }
     })
 }

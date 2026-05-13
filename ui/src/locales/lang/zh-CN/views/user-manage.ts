@@ -8,7 +8,7 @@ export default {
     updatePwd: '修改用户密码',
   },
   tip: {
-    professionalMessage: '社区版最多支持 2 个用户，如需拥有更多用户，请升级为专业版。',
+    professionalMessage: '当前部署最多支持 2 个用户，已达上限，请联系管理员处理。',
     updatePwdSuccess: '修改用户密码成功',
   },
   delete: {

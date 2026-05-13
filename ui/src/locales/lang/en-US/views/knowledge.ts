@@ -9,7 +9,7 @@ export default {
   },
   tip: {
     professionalMessage:
-      'The community edition supports up to 50 knowledge. For more knowledge, please upgrade to the professional edition.',
+      'This deployment supports up to 50 knowledge bases. The limit has been reached; please contact the administrator.',
     syncSuccess: 'Sync task sent successfully',
     updateModeMessage:
       'After modifying the knowledge vector model, you need to vectorize the knowledge. Do you want to continue saving?',

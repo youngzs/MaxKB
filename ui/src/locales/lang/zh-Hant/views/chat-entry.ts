@@ -3,11 +3,15 @@ export default {
   subTitle: '選擇一個智能體開始對話',
   empty: {
     noPublished: '目前還沒有可對話的智能體',
+    noMatch: '沒有符合的智能體',
     hint: '請先到「智能體」中建立並發佈一個智能體，發佈後即可在此直接對話。',
     goCreate: '去建立智能體',
   },
   search: {
     placeholder: '搜尋智能體名稱',
+  },
+  filter: {
+    all: '全部',
   },
   card: {
     chat: '開始對話',
@@ -16,5 +20,13 @@ export default {
   },
   hint: {
     onlyPublished: '僅顯示已發佈的智能體',
+  },
+  recent: {
+    title: '最近使用',
+    clear: '清空',
+    justNow: '剛剛',
+    minutesAgo: '{n} 分鐘前',
+    hoursAgo: '{n} 小時前',
+    daysAgo: '{n} 天前',
   },
 }

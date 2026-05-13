@@ -409,7 +409,7 @@ import ResourceTriggerDrawer from '@/views/trigger/ResourceTriggerDrawer.vue'
 import TemplateStoreDialog from '@/views/application/template-store/TemplateStoreDialog.vue'
 import ApplicationApi from '@/api/application/application'
 import WorkspaceApi from '@/api/workspace/workspace'
-import { MsgSuccess, MsgConfirm, MsgError } from '@/utils/message'
+import { MsgSuccess, MsgConfirm, MsgError, MsgAlert } from '@/utils/message'
 import { i18n_name, resetUrl } from '@/utils/common'
 import { isWorkFlow } from '@/utils/application'
 import { dateFormat } from '@/utils/time'
@@ -845,12 +845,8 @@ const importApplication = (file: any) => {
     })
     .catch((e) => {
       if (e.code === 400) {
-        MsgConfirm(t('common.tip'), t('views.application.tip.professionalMessage'), {
-          cancelButtonText: t('common.confirm'),
-          confirmButtonText: t('common.professional'),
-        }).then(() => {
-          window.open('https://maxkb.cn/pricing.html', '_blank')
-        })
+        // 私有部署不引导外部升级链接；仅提示用户达到上限
+        MsgAlert(t('common.tip'), t('views.application.tip.professionalMessage'))
       }
     })
 }

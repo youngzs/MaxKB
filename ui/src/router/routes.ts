@@ -8,7 +8,8 @@ export const routes: Array<RouteRecordRaw> = [
   {
     path: '/',
     name: 'home',
-    redirect: '/application',
+    // 登录后首屏直达「对话」入口，降低用户上手成本
+    redirect: '/chat-entry',
     children: [
       ...rolesRoutes,
       {
