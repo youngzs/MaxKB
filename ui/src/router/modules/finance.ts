@@ -69,7 +69,7 @@ const financeRouter = {
       meta: {
         icon: 'app-document',
         iconActive: 'app-document-active',
-        title: 'views.finance.materials',
+        title: 'views.finance.materials.title',
         activeMenu: '/finance',
         parentPath: '/finance',
         parentName: 'finance',
@@ -77,6 +77,19 @@ const financeRouter = {
         order: 3,
       },
       component: () => import('@/views/finance/materials/index.vue'),
+    },
+    {
+      path: '/finance/materials/:pk',
+      name: 'finance-materials-detail',
+      meta: {
+        title: 'views.finance.materials.title',
+        activeMenu: '/finance',
+        parentPath: '/finance',
+        parentName: 'finance',
+        sameRoute: 'finance-materials',
+        hidden: true,
+      },
+      component: () => import('@/views/finance/materials/detail.vue'),
     },
     {
       path: '/finance/documents',

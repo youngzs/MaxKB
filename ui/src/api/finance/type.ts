@@ -160,3 +160,88 @@ export type AIFillResponse = Record<string, string>
 export interface GenerationPreview {
   html: string
 }
+
+/* ──────────────────────────────────────────────────────────────────────────
+ *  Materials Task (Gate 4 Track C)
+ *  Mount: /admin/api/finance/workspace/<workspace_id>/materials-task
+ * ─────────────────────────────────────────────────────────────────────── */
+
+export type MaterialsTaskStatus =
+  | 'draft'
+  | 'parsing'
+  | 'matching'
+  | 'pending_review'
+  | 'approved'
+  | 'sent'
+  | 'rejected'
+  | 'failed'
+
+export type SensitivityLevel =
+  | 'public'
+  | 'internal'
+  | 'confidential'
+  | 'secret'
+
+export interface ParsedItem {
+  /** Stable identifier — links from MatchedDocument.item_key. */
+  key: string
+  label: string
+  description: string
+  required: boolean
+}
+
+export interface MatchedDocument {
+  /** Refers to ParsedItem.key. */
+  item_key: string
+  document_id: string
+  document_name: string
+  sensitivity_level: SensitivityLevel
+  /** 0..1 similarity score. */
+  score: number
+  /** Highlight snippet from the matching paragraph. */
+  snippet: string
+  /** AI-generated short summary for this document in this task context. */
+  ai_summary: string
+  /** Client-inferred (not server-returned): true when over current user clearance. */
+  is_locked?: boolean
+}
+
+export interface MaterialsTask {
+  id: string
+  workspace_id: string
+  project_id: string
+  title: string
+  requirement_text: string
+  requirement_file_oss_key: string
+  parsed_items: ParsedItem[]
+  matched_documents: MatchedDocument[]
+  /** document_ids that the user has marked as selected for the package. */
+  selected_documents: string[]
+  zip_oss_key: string
+  status: MaterialsTaskStatus
+  reviewer_id: string | null
+  reviewed_at: string | null
+  review_comment: string
+  error_message: string
+  created_by: string
+  created_at: string
+  updated_at: string
+}
+
+export interface MaterialsTaskListParams {
+  project_id?: string
+  status?: MaterialsTaskStatus | ''
+  page?: number
+  size?: number
+}
+
+export interface MaterialsTaskSelectionUpdate {
+  selected_documents: string[]
+  /** Optional override of the matched_documents snapshot (e.g. when manually adding docs). */
+  matched_documents?: MatchedDocument[]
+}
+
+export interface MaterialsTaskReviewBody {
+  action: 'pass' | 'reject'
+  comment?: string
+}
