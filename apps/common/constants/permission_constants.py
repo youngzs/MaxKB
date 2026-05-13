@@ -100,6 +100,9 @@ class Group(Enum):
     KNOWLEDGE_FOLDER = "KNOWLEDGE_FOLDER"
     TOOL_FOLDER = "TOOL_FOLDER"
 
+    # 融资工作台 (Finance Workspace)
+    FINANCE = "FINANCE"
+
 
 class SystemGroup(Enum):
     """
@@ -194,6 +197,10 @@ class Operate(Enum):
     TRIGGER_DELETE = "READ+TRIGGER_DELETE"
     BATCH_DELETE = "READ+BATCH_DELETE"
     BATCH_MOVE = "READ+BATCH_MOVE"
+    # 融资工作台 (Finance Workspace) operations
+    REVIEW = "REVIEW"  # 复核
+    SEND = "SEND"  # 发送
+    TEMPLATE_MANAGE = "TEMPLATE_MANAGE"  # 模板管理
 
 
 class RoleGroup(Enum):
@@ -1925,6 +1932,14 @@ class PermissionConstants(Enum):
         group=Group.OPERATION_LOG, operate=Operate.CLEAR_POLICY, role_list=[RoleConstants.ADMIN],
         parent_group=[SystemGroup.OPERATION_LOG]
     )
+
+    # 融资工作台 (Finance Workspace) — Gate 1: declare-only,
+    # not bound to any default role. Role bindings come in Gate 2.
+    FINANCE_READ = Permission(group=Group.FINANCE, operate=Operate.READ)
+    FINANCE_EDIT = Permission(group=Group.FINANCE, operate=Operate.EDIT)
+    FINANCE_REVIEW = Permission(group=Group.FINANCE, operate=Operate.REVIEW)
+    FINANCE_SEND = Permission(group=Group.FINANCE, operate=Operate.SEND)
+    FINANCE_TEMPLATE_MANAGE = Permission(group=Group.FINANCE, operate=Operate.TEMPLATE_MANAGE)
 
     def get_workspace_application_permission(self):
         return lambda r, kwargs: Permission(group=self.value.group, operate=self.value.operate,
