@@ -10,6 +10,8 @@ import useApplicationStore from './modules/application'
 import useChatUserStore from './modules/chat-user'
 import useToolStore from './modules/tool'
 import useFinanceProjectStore from './modules/finance-project'
+import useFinanceTemplateStore from './modules/finance-template'
+import useFinanceGenerationStore from './modules/finance-generation'
 const useStore = () => ({
   common: useCommonStore(),
   login: useLoginStore(),
@@ -23,6 +25,8 @@ const useStore = () => ({
   chatUser: useChatUserStore(),
   tool: useToolStore(),
   financeProject: useFinanceProjectStore(),
+  financeTemplate: useFinanceTemplateStore(),
+  financeGeneration: useFinanceGenerationStore(),
 })
 
 export default useStore

@@ -94,6 +94,19 @@ const financeRouter = {
       component: () => import('@/views/finance/documents/index.vue'),
     },
     {
+      path: '/finance/documents/new',
+      name: 'finance-documents-wizard',
+      meta: {
+        title: 'views.finance.documents',
+        activeMenu: '/finance',
+        parentPath: '/finance',
+        parentName: 'finance',
+        sameRoute: 'finance-documents',
+        hidden: true,
+      },
+      component: () => import('@/views/finance/documents/wizard.vue'),
+    },
+    {
       path: '/finance/feasibility',
       name: 'finance-feasibility',
       meta: {
@@ -155,6 +168,19 @@ const financeRouter = {
         order: 8,
       },
       component: () => import('@/views/finance/template/index.vue'),
+    },
+    {
+      path: '/finance/template/:pk',
+      name: 'finance-template-detail',
+      meta: {
+        title: 'views.finance.template',
+        activeMenu: '/finance',
+        parentPath: '/finance',
+        parentName: 'finance',
+        sameRoute: 'finance-template',
+        hidden: true,
+      },
+      component: () => import('@/views/finance/template/detail.vue'),
     },
     {
       path: '/finance/audit',
