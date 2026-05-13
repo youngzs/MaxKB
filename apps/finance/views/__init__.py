@@ -5,5 +5,10 @@
     @desc: finance views package
 """
 from .ping import FinancePingView
+from .project import FinanceProjectDetailView, FinanceProjectListView
 
-__all__ = ['FinancePingView']
+__all__ = [
+    'FinancePingView',
+    'FinanceProjectListView',
+    'FinanceProjectDetailView',
+]

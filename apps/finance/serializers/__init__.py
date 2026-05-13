@@ -2,5 +2,13 @@
 """
     @project: MaxKB
     @file： __init__.py
-    @desc: finance serializers package — populated in Gate 2.
+    @desc: finance serializers package.
 """
+from .audit_log import FinanceAuditLogOutputSerializer
+from .project import FinanceProjectInputSerializer, FinanceProjectOutputSerializer
+
+__all__ = [
+    'FinanceProjectInputSerializer',
+    'FinanceProjectOutputSerializer',
+    'FinanceAuditLogOutputSerializer',
+]
