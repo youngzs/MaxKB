@@ -45,6 +45,9 @@ from finance.service.document_generator import (
     render_to_html,
     trigger_generation,
 )
+from finance.service.llm import chat_completion
+
+from common.utils.logger import maxkb_logger
 
 _DEFAULT_PAGE = 1
 _DEFAULT_SIZE = 20
@@ -104,29 +107,84 @@ def _do_revoke(instance: DocumentGeneration, actor_id) -> DocumentGeneration:
     return instance
 
 
-def _do_ai_fill(template: DocumentTemplate, project: FinanceProject,
-                placeholder_keys) -> dict:
-    """
-    Gate 3 stub: produce `{key: "[AI 待生成: <label>]"}` for each requested
-    key that's actually declared on the template's placeholder list.
-    Unknown keys are silently dropped.
+_AI_FILL_SYSTEM_PROMPT = (
+    '你是合规融资文档撰写助手。请根据上下文，为下面这个占位符生成准确、专业的填充内容。\n'
+    '  - 占位符标签：{label}\n'
+    '  - 类型：{type}\n'
+    '  - 提示：{ai_hint}\n'
+    '  - 项目：{project_name} (代码 {project_code}, 金额 {target_amount} {currency})\n'
+    '直接输出填充内容文本，不要加引号或额外说明。'
+)
 
-    TODO(Gate 4): swap for a real LLM call using the workspace default
-    model, with prompt seeded from `project.description` and each
-    placeholder's `ai_hint`.
+
+def _do_ai_fill(template: DocumentTemplate, project: FinanceProject,
+                placeholder_keys, workspace_id: str = 'default') -> dict:
+    """
+    Generate AI-filled values for each requested placeholder key declared on
+    the template. Unknown keys are silently dropped.
+
+    Each placeholder is rendered into its own single-turn LLM prompt
+    parameterised by project + template metadata. Any failure mode (no LLM
+    configured, model error, empty response, oversized response) falls back
+    to the legacy stub string `[AI 待生成: <label>]` for that key, so the
+    overall call always returns a dict with every requested-and-known key.
+
+    The function MUST NOT raise; if anything explodes mid-loop we return
+    the stub-filled dict for whatever we've assembled so far.
     """
     wanted = set(placeholder_keys)
     placeholders_by_key = {p.get('key'): p for p in (template.placeholders or [])}
     filled: dict = {}
-    for key in wanted:
-        meta = placeholders_by_key.get(key)
-        if meta is None:
-            continue
-        label = meta.get('label') or key
-        filled[key] = f'[AI 待生成: {label}]'
-    # `project` is currently unused — referenced so the signature carries
-    # the data Gate 4 will need (project description + workspace's model).
-    _ = project
+    # Hard ceiling on a single AI-fill response — keeps a misbehaving model
+    # from blowing up downstream docx rendering with multi-KB blobs.
+    max_chars = 2048
+
+    try:
+        for key in wanted:
+            meta = placeholders_by_key.get(key)
+            if meta is None:
+                continue
+            label = meta.get('label') or key
+            ph_type = meta.get('type') or 'text'
+            ai_hint = meta.get('ai_hint') or '无'
+            stub = f'[AI 待生成: {label}]'
+
+            try:
+                system_prompt = _AI_FILL_SYSTEM_PROMPT.format(
+                    label=label,
+                    type=ph_type,
+                    ai_hint=ai_hint,
+                    project_name=project.name,
+                    project_code=project.code or '',
+                    target_amount=project.target_amount,
+                    currency=project.currency,
+                )
+                text = chat_completion(workspace_id, system_prompt, '请生成内容。')
+            except Exception as e:  # noqa: BLE001 — never propagate
+                maxkb_logger.warning(f'[finance.ai_fill] chat_completion raised for {key}: {e}')
+                filled[key] = stub
+                continue
+
+            if not text:
+                filled[key] = stub
+                continue
+            content = text.strip()
+            if not content or len(content) > max_chars:
+                filled[key] = stub
+                continue
+            filled[key] = content
+    except Exception as e:  # noqa: BLE001 — bulk fallback
+        maxkb_logger.error(f'[finance.ai_fill] unexpected failure, returning partial: {e}', exc_info=True)
+        # Backfill anything not yet processed with the stub.
+        for key in wanted:
+            if key in filled:
+                continue
+            meta = placeholders_by_key.get(key)
+            if meta is None:
+                continue
+            label = meta.get('label') or key
+            filled[key] = f'[AI 待生成: {label}]'
+
     return filled
 
 
@@ -375,5 +433,7 @@ class DocumentGenerationAIFillView(APIView):
         if project is None:
             raise NotFound404(404, _('Project not found'))
 
-        filled = _do_ai_fill(template, project, payload['placeholder_keys'])
+        filled = _do_ai_fill(
+            template, project, payload['placeholder_keys'], workspace_id=str(workspace_id)
+        )
         return result.success({'values': filled})
