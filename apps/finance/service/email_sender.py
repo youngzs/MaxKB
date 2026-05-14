@@ -42,13 +42,22 @@ from finance.models import (
 from finance.service.audit import log_event
 from finance.service.document_generator import _load_bytes
 from finance.service.encryption import decrypt_secret
+from finance.service.perf import log_slow
+from finance.service.signed_url import make_signed_download_url
 
 _LOGGER = logging.getLogger(__name__)
 
-# Refuse to inline-attach payloads above this. Materials zips are typically
-# small (a handful of MB) — anything larger almost certainly needs a signed
-# download link instead, which Gate 6 will wire up properly.
+# Refuse to inline-attach payloads above this — MTAs commonly reject
+# >25MB, and big attachments hammer SMTP throughput. For zips between
+# this and ``_MAX_SIGNED_LINK_BYTES`` we instead mint a signed download
+# URL and inject it into the rendering context as ``download_url``
+# (Gate 6 Track C / C1).
 _MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024  # 10 MiB
+
+# Hard ceiling — anything above this even via signed link is almost
+# certainly an OSS misconfiguration (Postgres bytea cap, network egress
+# cost). Fail loudly rather than mint a link the recipient can't pull.
+_MAX_SIGNED_LINK_BYTES = 500 * 1024 * 1024  # 500 MiB
 
 # Conservative SMTP timeout — investor mailservers are sometimes slow but
 # 30s is plenty before we should give up and ask the user to retry.
@@ -124,6 +133,10 @@ def _build_context(
         'task_title': task.title,
         'recipient_name': recipient_name,
         'zip_filename': zip_filename,
+        # Always defined so templates that reference {{ download_url }}
+        # render to an empty string when we ARE attaching the zip
+        # inline. Overwritten downstream when we mint a signed link.
+        'download_url': '',
     }
     if extra_context:
         # Caller-supplied wins (e.g. they can override `recipient_name` for
@@ -202,6 +215,7 @@ def _dial_and_send(smtp_config: SmtpConfig, msg: EmailMessage) -> None:
         client.send_message(msg)
 
 
+@log_slow(threshold_ms=1000, name='finance.email_sender.send_materials_task_email')
 def send_materials_task_email(
     *,
     task_id: UUID | str,
@@ -333,7 +347,9 @@ def send_materials_task_email(
             id=task.project_id, workspace_id=workspace_id, is_deleted=False
         ).first()
 
-        # ---- Render template ----
+        # ---- Build rendering context (template renders happen AFTER we
+        # decide attachment vs signed-link, so `download_url` can flow
+        # into the body for big-zip sends). ----
         zip_filename = f'materials-{task.id}.zip'
         context = _build_context(
             task=task,
@@ -342,44 +358,95 @@ def send_materials_task_email(
             zip_filename=zip_filename,
             extra_context=extra_context,
         )
-        subject = render_template_string(template.subject, context)
-        body_text = render_template_string(template.body_text, context)
-        body_html = render_template_string(template.body_html, context)
 
         # ---- Resolve attachment ----
+        # Three paths:
+        #   <=10MB                → inline attach
+        #   10MB < size <= 500MB  → mint signed URL, do NOT attach
+        #   >500MB                → refuse outright (matches `_load_bytes`
+        #                            risk; users must repack)
         zip_bytes: bytes | None = None
         attachment_keys: list[str] = []
+        link_only = False
         if attach_zip:
             if not task.zip_oss_key:
+                # We haven't rendered yet — render with empty download_url
+                # context so the audit row still has subject/body preview.
+                subject_pre = render_template_string(template.subject, context)
+                body_pre = render_template_string(template.body_text, context)
                 return _finalize(
                     status=EmailSendStatus.FAILED,
                     error='task has not been packed (no zip_oss_key)',
-                    subject_rendered=subject,
-                    body_preview=body_text,
+                    subject_rendered=subject_pre,
+                    body_preview=body_pre,
                     task_status=task.status,
                 )
             try:
                 zip_bytes = _load_bytes(task.zip_oss_key)
             except Exception as e:  # noqa: BLE001
+                subject_pre = render_template_string(template.subject, context)
+                body_pre = render_template_string(template.body_text, context)
                 return _finalize(
                     status=EmailSendStatus.FAILED,
                     error=f'failed to load zip: {e!r}',
-                    subject_rendered=subject,
-                    body_preview=body_text,
+                    subject_rendered=subject_pre,
+                    body_preview=body_pre,
                     task_status=task.status,
                 )
-            if zip_bytes is not None and len(zip_bytes) > _MAX_ATTACHMENT_BYTES:
+
+            zip_size = len(zip_bytes) if zip_bytes is not None else 0
+            if zip_size > _MAX_SIGNED_LINK_BYTES:
+                subject_pre = render_template_string(template.subject, context)
+                body_pre = render_template_string(template.body_text, context)
                 return _finalize(
                     status=EmailSendStatus.FAILED,
                     error=(
-                        f'attachment too large ({len(zip_bytes)} bytes); '
-                        f'limit is {_MAX_ATTACHMENT_BYTES} bytes — use download link'
+                        f'attachment too large ({zip_size} bytes); '
+                        f'hard limit is {_MAX_SIGNED_LINK_BYTES} bytes — repack required'
                     ),
-                    subject_rendered=subject,
-                    body_preview=body_text,
+                    subject_rendered=subject_pre,
+                    body_preview=body_pre,
                     task_status=task.status,
                 )
-            attachment_keys = [task.zip_oss_key]
+            if zip_size > _MAX_ATTACHMENT_BYTES:
+                # Too big to attach but within signed-link ceiling.
+                # Mint a 7-day download URL and inject into the context;
+                # templates can reference {{ download_url }} which now
+                # holds e.g. ``/admin/api/finance/download/<token>``.
+                try:
+                    download_url = make_signed_download_url(
+                        target_type=FinanceAuditTargetType.MATERIALS_TASK,
+                        target_id=task.id,
+                        workspace_id=workspace_id,
+                        oss_key=task.zip_oss_key,
+                    )
+                except Exception as e:  # noqa: BLE001
+                    subject_pre = render_template_string(template.subject, context)
+                    body_pre = render_template_string(template.body_text, context)
+                    return _finalize(
+                        status=EmailSendStatus.FAILED,
+                        error=f'failed to mint signed download url: {e!r}',
+                        subject_rendered=subject_pre,
+                        body_preview=body_pre,
+                        task_status=task.status,
+                    )
+                context['download_url'] = download_url
+                # The oss key is still recorded on the log so audit can
+                # tie the send to the artifact even though no MIME
+                # attachment went out.
+                attachment_keys = [task.zip_oss_key]
+                zip_bytes = None
+                link_only = True
+            else:
+                attachment_keys = [task.zip_oss_key]
+
+        # Render AFTER we've populated download_url (or left it '').
+        subject = render_template_string(template.subject, context)
+        body_text = render_template_string(template.body_text, context)
+        body_html = render_template_string(template.body_html, context)
+        # Quiet the linter — `link_only` is informational for callers
+        # who later trace logs; it doesn't gate any further branch.
+        _ = link_only
 
         # ---- Build MIME ----
         try:

@@ -6,6 +6,15 @@ app_name = 'finance'
 # @formatter:off
 urlpatterns = [
     path('ping', views.FinancePingView.as_view(), name='finance_ping'),
+    # ---- Gate 6 Track C: real health probe ----
+    path('healthz', views.FinanceHealthzView.as_view(), name='finance_healthz'),
+    # ---- Gate 6 Track C: signed-URL public download ----
+    # Token IS the auth — do NOT nest under workspace/<workspace_id>/.
+    path(
+        'download/<str:token>',
+        views.SignedDownloadView.as_view(),
+        name='signed_download',
+    ),
     path(
         'workspace/<str:workspace_id>/project',
         views.FinanceProjectListView.as_view(),
@@ -157,5 +166,21 @@ urlpatterns = [
         'workspace/<str:workspace_id>/audit-log',
         views.FinanceAuditLogListView.as_view(),
         name='audit_log_list',
+    ),
+    # ---- Gate 6 Track A4: audit log CSV export ----
+    # Registered BEFORE the list route would otherwise win — list uses
+    # the exact ``audit-log`` segment so we're fine, but keeping ``export``
+    # as a sibling under ``audit-log/`` mirrors the rest of the module's
+    # action-style URLs.
+    path(
+        'workspace/<str:workspace_id>/audit-log/export',
+        views.FinanceAuditLogExportView.as_view(),
+        name='audit_log_export',
+    ),
+    # ---- Gate 6 Track A3: document sensitivity PATCH ----
+    path(
+        'workspace/<str:workspace_id>/document-sensitivity/<uuid:document_id>',
+        views.DocumentSensitivityView.as_view(),
+        name='document_sensitivity',
     ),
 ]

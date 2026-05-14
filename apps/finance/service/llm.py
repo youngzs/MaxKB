@@ -23,6 +23,8 @@ from django.db.models import QuerySet
 
 from common.utils.logger import maxkb_logger
 
+from .perf import log_slow
+
 
 def get_workspace_chat_model(workspace_id: str):
     """
@@ -59,6 +61,7 @@ def get_workspace_chat_model(workspace_id: str):
         return None
 
 
+@log_slow(threshold_ms=1000, name='finance.llm.chat_completion')
 def chat_completion(
     workspace_id: str,
     system_prompt: str,

@@ -4,7 +4,7 @@
     @file： __init__.py
     @desc: finance views package
 """
-from .audit_log import FinanceAuditLogListView
+from .audit_log import FinanceAuditLogExportView, FinanceAuditLogListView
 from .document_generation import (
     DocumentGenerationAIFillView,
     DocumentGenerationConfirmView,
@@ -14,6 +14,7 @@ from .document_generation import (
     DocumentGenerationPreviewView,
     DocumentGenerationRevokeView,
 )
+from .document_sensitivity import DocumentSensitivityView
 from .document_template import DocumentTemplateDetailView, DocumentTemplateListView
 from .email_send_log import EmailSendLogListView
 from .email_template import EmailTemplateDetailView, EmailTemplateListView
@@ -30,8 +31,10 @@ from .materials_task import (
     MaterialsTaskSummarizeView,
     MaterialsTaskZipDownloadView,
 )
+from .healthz import FinanceHealthzView
 from .ping import FinancePingView
 from .project import FinanceProjectDetailView, FinanceProjectListView
+from .signed_download import SignedDownloadView
 from .smtp_config import (
     SmtpConfigDetailView,
     SmtpConfigListView,
@@ -40,7 +43,11 @@ from .smtp_config import (
 
 __all__ = [
     'FinancePingView',
+    'FinanceHealthzView',
+    'SignedDownloadView',
     'FinanceAuditLogListView',
+    'FinanceAuditLogExportView',
+    'DocumentSensitivityView',
     'FinanceProjectListView',
     'FinanceProjectDetailView',
     'DocumentTemplateListView',

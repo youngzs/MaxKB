@@ -27,6 +27,8 @@ import uuid_utils.compat as uuid
 
 from common.utils.logger import maxkb_logger
 
+from .perf import log_slow
+
 
 _FILE_SOURCE_TYPE = 'SYSTEM'  # keeps finance docs from being garbage-collected by TEMPORARY_* sweeps
 _FILE_SOURCE_ID_TEMPLATE = 'FINANCE_TEMPLATE'
@@ -82,6 +84,7 @@ def store_template_bytes(file_bytes: bytes, file_name: str) -> str:
     return _save_bytes(file_bytes, file_name, _FILE_SOURCE_ID_TEMPLATE)
 
 
+@log_slow(threshold_ms=1000, name='finance.document_generator.render_template')
 def render_template(template_oss_key: str, values: dict, output_filename: str) -> str:
     """
     Render the template at `template_oss_key` against `values` and store the
@@ -99,6 +102,7 @@ def render_template(template_oss_key: str, values: dict, output_filename: str) -
     return _save_bytes(out.getvalue(), output_filename, _FILE_SOURCE_ID_GENERATION)
 
 
+@log_slow(threshold_ms=1000, name='finance.document_generator.render_to_html')
 def render_to_html(output_oss_key: str) -> str:
     """
     Convert a rendered docx (already in OSS) to an HTML fragment for preview.
@@ -113,6 +117,7 @@ def render_to_html(output_oss_key: str) -> str:
     return result.value or ''
 
 
+@log_slow(threshold_ms=1000, name='finance.document_generator.trigger_generation')
 def trigger_generation(generation_id: UUID) -> None:
     """
     Process one DocumentGeneration row through the state machine.

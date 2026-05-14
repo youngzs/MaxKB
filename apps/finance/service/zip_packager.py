@@ -33,6 +33,8 @@ from uuid import UUID
 
 from common.utils.logger import maxkb_logger
 
+from .perf import log_slow
+
 
 _ZIP_FILE_SOURCE_ID = 'FINANCE_MATERIALS_ZIP'
 
@@ -92,6 +94,7 @@ def _save_zip_bytes(zip_bytes: bytes, output_filename: str) -> str:
     return _save_bytes(zip_bytes, output_filename, _ZIP_FILE_SOURCE_ID)
 
 
+@log_slow(threshold_ms=1000, name='finance.zip_packager.pack_documents_grouped')
 def pack_documents_grouped(
     item_groups: List[dict],
     workspace_id: UUID,
@@ -131,6 +134,7 @@ def pack_documents_grouped(
     return _save_zip_bytes(buffer.getvalue(), output_filename)
 
 
+@log_slow(threshold_ms=1000, name='finance.zip_packager.pack_documents_flat')
 def pack_documents_flat(
     document_ids: List[str],
     workspace_id: UUID,
