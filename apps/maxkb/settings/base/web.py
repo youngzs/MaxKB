@@ -50,6 +50,11 @@ INSTALLED_APPS = [
 ]
 
 MIDDLEWARE = [
+    # ---- Gate 7 Track A1: public-endpoint bypass ----
+    # MUST be the first middleware so /ping and /healthz are answered
+    # without ever entering DRF's auth/view dispatch chain. See
+    # apps/finance/middleware.py for the root-cause analysis.
+    'finance.middleware.PublicEndpointBypassMiddleware',
     'django.middleware.locale.LocaleMiddleware',
     'django.middleware.security.SecurityMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',

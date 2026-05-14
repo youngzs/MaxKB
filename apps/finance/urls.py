@@ -183,4 +183,16 @@ urlpatterns = [
         views.DocumentSensitivityView.as_view(),
         name='document_sensitivity',
     ),
+    # ---- Gate 7 Track A4: admin system-info diagnostics ----
+    path(
+        'workspace/<str:workspace_id>/system-info',
+        views.FinanceSystemInfoView.as_view(),
+        name='system_info',
+    ),
+    # ---- Gate 7 Track B: workflow-run list (Celery telemetry) ----
+    path(
+        'workspace/<str:workspace_id>/workflow-run',
+        views.FinanceWorkflowRunListView.as_view(),
+        name='workflow_run_list',
+    ),
 ]

@@ -40,6 +40,8 @@ from .smtp_config import (
     SmtpConfigListView,
     SmtpConfigTestView,
 )
+from .system_info import FinanceSystemInfoView
+from .workflow_run import FinanceWorkflowRunListView
 
 __all__ = [
     'FinancePingView',
@@ -76,4 +78,6 @@ __all__ = [
     'EmailTemplateDetailView',
     'MaterialsTaskSendView',
     'EmailSendLogListView',
+    'FinanceSystemInfoView',
+    'FinanceWorkflowRunListView',
 ]

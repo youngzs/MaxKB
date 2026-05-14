@@ -113,11 +113,13 @@ class Command(BaseCommand):
 
         installed = 0
         updated = 0
+        unchanged = 0
         skipped = 0
+        expected_slugs = []
 
         for filename, data in workflows:
             if data is None:
-                self.stdout.write(self.style.ERROR(f'  ✗ {filename}: failed to parse, skipped'))
+                self.stdout.write(self.style.ERROR(f'  x {filename}: failed to parse, skipped'))
                 skipped += 1
                 continue
 
@@ -138,6 +140,8 @@ class Command(BaseCommand):
                 f'version={data.get("version", "?")}'
             )
 
+            expected_slugs.append((slug, wf_id, name, len(nodes)))
+
             if dry_run:
                 continue
 
@@ -151,22 +155,67 @@ class Command(BaseCommand):
                 'is_publish': True,
             }
 
+            # Determine whether this is a no-op update vs. a real change.
+            # We do a pre-fetch so the "unchanged" count is meaningful for
+            # operators eyeballing the install report.
+            existing = Application.objects.filter(id=wf_id).first()
+            if existing is not None:
+                old_work_flow = existing.work_flow or {}
+                old_name = existing.name
+                old_desc = existing.desc or ''
+                is_unchanged = (
+                    old_work_flow == work_flow_payload
+                    and old_name == name
+                    and old_desc == description[:512]
+                )
+            else:
+                is_unchanged = False
+
             obj, created = Application.objects.update_or_create(
                 id=wf_id,
                 defaults=defaults,
             )
             if created:
                 installed += 1
-                self.stdout.write(self.style.SUCCESS(f'    ✓ created application id={obj.id}'))
+                self.stdout.write(self.style.SUCCESS(f'    + created application id={obj.id}'))
+            elif is_unchanged:
+                unchanged += 1
+                self.stdout.write(f'    = unchanged application id={obj.id}')
             else:
                 updated += 1
-                self.stdout.write(self.style.SUCCESS(f'    ↻ updated application id={obj.id}'))
+                self.stdout.write(self.style.SUCCESS(f'    ~ updated application id={obj.id}'))
 
         if dry_run:
             self.stdout.write(self.style.WARNING(
-                '[dry-run] No rows written. Re-run without --dry-run to install.'
+                f'[dry-run] Would install/update {len(expected_slugs)} workflow(s). '
+                'Re-run without --dry-run to write.'
             ))
-        else:
-            self.stdout.write(self.style.NOTICE(
-                f'Done. installed={installed} updated={updated} skipped={skipped}'
-            ))
+            return
+
+        # ---- Post-install verification ----
+        # Re-fetch by the deterministic ids and assert each row exists
+        # with a non-empty work_flow payload. We log a warning (not error)
+        # if any row is missing — install path already wrote them, so a
+        # post-fetch miss is more likely a routing/DB-replica issue than
+        # a real failure. Operators will see it in CI logs either way.
+        verified = 0
+        for slug, wf_id, name, node_count in expected_slugs:
+            row = Application.objects.filter(id=wf_id).first()
+            if row is None:
+                self.stdout.write(self.style.ERROR(
+                    f'  ! verify FAILED: slug={slug} id={wf_id} not found after install'
+                ))
+                continue
+            wf = row.work_flow or {}
+            wf_nodes = wf.get('nodes') if isinstance(wf, dict) else None
+            if not wf_nodes:
+                self.stdout.write(self.style.ERROR(
+                    f'  ! verify FAILED: slug={slug} id={wf_id} has empty work_flow.nodes'
+                ))
+                continue
+            verified += 1
+
+        self.stdout.write(self.style.NOTICE(
+            f'Done. created={installed} updated={updated} unchanged={unchanged} '
+            f'skipped={skipped} verified={verified}/{len(expected_slugs)}'
+        ))

@@ -35,7 +35,7 @@ import json
 from datetime import datetime, timezone
 
 from django.db.models import Q
-from django.http import StreamingHttpResponse
+from django.http import HttpResponse, StreamingHttpResponse
 from django.utils.dateparse import parse_datetime
 from rest_framework.request import Request
 from rest_framework.views import APIView
@@ -233,11 +233,98 @@ def _iter_csv_rows(queryset):
         yield _flush(buf)
 
 
-def _filename_for_export(workspace_id: str) -> str:
-    """``finance_audit_<workspace>_<utc-stamp>.csv``"""
+def _filename_for_export(workspace_id: str, ext: str = 'csv') -> str:
+    """``finance_audit_<workspace>_<utc-stamp>.<ext>``"""
     stamp = datetime.now(tz=timezone.utc).strftime('%Y%m%dT%H%M%SZ')
     safe_ws = ''.join(c for c in str(workspace_id) if c.isalnum() or c in ('-', '_'))[:32]
-    return f'finance_audit_{safe_ws or "default"}_{stamp}.csv'
+    safe_ext = ext if ext in ('csv', 'xlsx') else 'csv'
+    return f'finance_audit_{safe_ws or "default"}_{stamp}.{safe_ext}'
+
+
+# ---- Gate 7 Track A2: xlsx export -----------------------------------------
+#
+# Build an xlsx workbook in-memory (openpyxl is fully in-memory anyway) and
+# return as a single HttpResponse rather than streaming — openpyxl's writer
+# doesn't expose a chunk-by-chunk iterator without the optional ``write_only``
+# mode, and a 50K-row sheet is well under what an in-memory workbook can hold.
+
+_XLSX_HEADER_LABELS = _CSV_HEADERS  # identical bilingual labels — keep parity
+_XLSX_SHEET_NAME = 'finance_audit'
+_XLSX_PAYLOAD_COL_WIDTH = 80
+_XLSX_DEFAULT_COL_WIDTH = 22
+_XLSX_CONTENT_TYPE = (
+    'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+)
+
+
+def _build_xlsx_bytes(queryset) -> bytes:
+    """
+    Build an xlsx file from the queryset and return its raw bytes.
+
+    Uses ``write_only`` mode so rows are streamed to the underlying
+    zipfile rather than retained in memory — important for the 50K
+    row cap. The header row uses ``Font(bold=True)`` and the payload
+    column is wrapped + capped at 80 chars wide so reviewers don't
+    end up with a single column hogging their screen.
+    """
+    # Lazy import keeps openpyxl off the import graph for non-export
+    # requests — the dep is heavy and we don't want to pay for it on
+    # every audit-log list call.
+    from openpyxl import Workbook
+    from openpyxl.styles import Alignment, Font
+    from openpyxl.utils import get_column_letter
+
+    wb = Workbook(write_only=True)
+    ws = wb.create_sheet(title=_XLSX_SHEET_NAME)
+
+    # Header row — bold. In write_only mode we have to use WriteOnlyCell
+    # because styled cells can't be passed as plain values.
+    from openpyxl.cell import WriteOnlyCell
+
+    header_cells = []
+    bold = Font(bold=True)
+    for label in _XLSX_HEADER_LABELS:
+        cell = WriteOnlyCell(ws, value=label)
+        cell.font = bold
+        header_cells.append(cell)
+    ws.append(header_cells)
+
+    # Column widths. In write_only mode column dimensions are still
+    # writable before we save.
+    for idx, _ in enumerate(_XLSX_HEADER_LABELS, start=1):
+        letter = get_column_letter(idx)
+        # Last column (payload) wider + wrapped.
+        if idx == len(_XLSX_HEADER_LABELS):
+            ws.column_dimensions[letter].width = _XLSX_PAYLOAD_COL_WIDTH
+        else:
+            ws.column_dimensions[letter].width = _XLSX_DEFAULT_COL_WIDTH
+
+    payload_alignment = Alignment(wrap_text=True, vertical='top')
+
+    for row in queryset.iterator(chunk_size=_EXPORT_CHUNK):
+        try:
+            payload_json = json.dumps(row.payload or {}, ensure_ascii=False, default=str)
+        except (TypeError, ValueError):
+            payload_json = ''
+
+        cells = [
+            row.created_at.isoformat() if row.created_at else '',
+            str(row.actor_id) if row.actor_id else '',
+            row.action or '',
+            row.target_type or '',
+            str(row.target_id) if row.target_id else '',
+            row.ip or '',
+            (row.user_agent or '')[:512],
+        ]
+        # Wrap the payload column explicitly.
+        payload_cell = WriteOnlyCell(ws, value=payload_json)
+        payload_cell.alignment = payload_alignment
+        cells.append(payload_cell)
+        ws.append(cells)
+
+    buffer = io.BytesIO()
+    wb.save(buffer)
+    return buffer.getvalue()
 
 
 class FinanceAuditLogExportView(APIView):
@@ -255,11 +342,10 @@ class FinanceAuditLogExportView(APIView):
     bulk read of itself, which compliance reviewers expect.
 
     Format support:
-        ?format=csv   (default; always available)
-        ?format=xlsx  (declined for now — returns 400)
-                      openpyxl is in the dep tree so a future patch can
-                      enable this; deferred to keep the streaming
-                      contract simple for v1.
+        ?format=csv   (default; streamed, UTF-8 BOM for Excel)
+        ?format=xlsx  (Gate 7 A2 — bold header, wrapped payload column,
+                      same 50K row cap, returned as single in-memory
+                      response)
     """
 
     authentication_classes = [TokenAuth]
@@ -274,24 +360,31 @@ class FinanceAuditLogExportView(APIView):
     )
     def get(self, request: Request, workspace_id):
         fmt = (request.query_params.get('format') or 'csv').strip().lower()
-        if fmt not in ('csv',):
-            # Explicit reject for xlsx so the client knows to fall back
-            # to CSV. Switching to a 200 with a JSON error envelope would
-            # mask the issue under our usual ``result.error`` shape;
-            # giving DRF the AppApiException keeps the surface honest.
+        if fmt not in ('csv', 'xlsx'):
             from common.exception.app_exception import AppApiException
             raise AppApiException(
                 400,
-                f"format={fmt!r} is not supported; only 'csv' is currently available "
-                f"(xlsx export is on the roadmap)",
+                f"format={fmt!r} is not supported; expected 'csv' or 'xlsx'",
             )
 
         qs = _build_queryset(workspace_id, request.query_params)
         # Slice at the export cap. Note: Django evaluates [:N] lazily,
-        # so this still streams via ``iterator()`` below.
+        # so this still streams via ``iterator()`` below (for CSV) or
+        # iterates row-by-row into the workbook (for xlsx).
         qs = qs[:_EXPORT_MAX_ROWS]
 
-        filename = _filename_for_export(workspace_id)
+        if fmt == 'xlsx':
+            filename = _filename_for_export(workspace_id, ext='xlsx')
+            payload = _build_xlsx_bytes(qs)
+            response = HttpResponse(
+                payload,
+                content_type=_XLSX_CONTENT_TYPE,
+            )
+            response['Content-Disposition'] = f'attachment; filename="{filename}"'
+            response['Content-Length'] = str(len(payload))
+            return response
+
+        filename = _filename_for_export(workspace_id, ext='csv')
         response = StreamingHttpResponse(
             _iter_csv_rows(qs),
             content_type='text/csv; charset=utf-8',
