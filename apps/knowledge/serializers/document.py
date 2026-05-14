@@ -770,6 +770,18 @@ class DocumentSerializers(serializers.Serializer):
             except AlreadyQueued as e:
                 raise AppApiException(500, _('The task is being executed, please do not send it repeatedly.'))
 
+            # 点"向量化"时，对扫描版 PDF（段落为空 / 仅图片占位）补跑一次 OCR。
+            # 任务自身判断是否真的需要 OCR：已有正文的文档会被跳过，所以
+            # 对普通文本文档无副作用；OCR 完成后会自动重新 embedding。
+            try:
+                from knowledge.task.ocr import enqueue_ocr_if_pdf
+                enqueue_ocr_if_pdf(document_id)
+            except Exception as e:
+                from common.utils.logger import maxkb_logger
+                maxkb_logger.warning(
+                    f"refresh: failed to enqueue OCR for {document_id}: {e}"
+                )
+
         @staticmethod
         def get_workbook(data_dict, document_dict):
             # 创建工作簿对象
