@@ -218,6 +218,7 @@ const previewTarget = ref<Generation | null>(null)
 const canEdit = computed(() =>
   hasPermission(
     [
+      RoleConst.ADMIN,
       RoleConst.WORKSPACE_MANAGE.getWorkspaceRole,
       PermissionConst.FINANCE_EDIT.getWorkspacePermission,
       PermissionConst.FINANCE_EDIT.getWorkspacePermissionWorkspaceManageRole,

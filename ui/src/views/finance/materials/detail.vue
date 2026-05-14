@@ -436,6 +436,7 @@ const projectName = computed(() => {
 const canEdit = computed(() =>
   hasPermission(
     [
+      RoleConst.ADMIN,
       RoleConst.WORKSPACE_MANAGE.getWorkspaceRole,
       PermissionConst.FINANCE_EDIT.getWorkspacePermission,
       PermissionConst.FINANCE_EDIT.getWorkspacePermissionWorkspaceManageRole,
@@ -447,6 +448,7 @@ const canEdit = computed(() =>
 const canReview = computed(() =>
   hasPermission(
     [
+      RoleConst.ADMIN,
       RoleConst.WORKSPACE_MANAGE.getWorkspaceRole,
       PermissionConst.FINANCE_REVIEW.getWorkspacePermission,
       PermissionConst.FINANCE_REVIEW.getWorkspacePermissionWorkspaceManageRole,
