@@ -29,9 +29,13 @@
         - keyword       substring match on the JSON payload (path field)
         - page, size    pagination
 """
-from datetime import datetime
+import csv
+import io
+import json
+from datetime import datetime, timezone
 
 from django.db.models import Q
+from django.http import StreamingHttpResponse
 from django.utils.dateparse import parse_datetime
 from rest_framework.request import Request
 from rest_framework.views import APIView
@@ -42,6 +46,7 @@ from common.auth.authentication import has_permissions
 from common.constants.permission_constants import PermissionConstants, RoleConstants
 from finance.models import FinanceAuditAction, FinanceAuditLog, FinanceAuditTargetType
 from finance.serializers.audit_log import FinanceAuditLogOutputSerializer
+from finance.service.audit import audit_log
 
 _DEFAULT_PAGE = 1
 _DEFAULT_SIZE = 20
@@ -156,3 +161,143 @@ class FinanceAuditLogListView(APIView):
             current_page=page,
             page_size=size,
         ))
+
+
+# ---- Gate 6 Track A4: audit log CSV export ----
+
+_EXPORT_MAX_ROWS = 50_000
+_EXPORT_CHUNK = 500  # iterator chunk size for the queryset
+
+# Column headers — bilingual labels so compliance reviewers reading the
+# CSV in Excel get the Chinese label they expect, while the underlying
+# data is the raw enum/UUID value (not the i18n label) so cross-tool
+# correlation stays trivial.
+_CSV_HEADERS = [
+    '时间 (created_at)',
+    '操作人ID (actor_id)',
+    '操作 (action)',
+    '对象类型 (target_type)',
+    '对象ID (target_id)',
+    'IP',
+    'User-Agent',
+    'Payload (JSON)',
+]
+
+
+def _iter_csv_rows(queryset):
+    """
+    Yield CSV byte chunks for a streamed response.
+
+    Uses ``queryset.iterator(chunk_size=...)`` so we don't materialise
+    the entire result set in memory; the 50K row cap is enforced
+    against the limited queryset rather than the raw count, so a
+    matching set of 1M rows simply truncates at 50K instead of OOM-ing
+    the worker.
+    """
+    # csv writes text; we wrap a per-chunk StringIO so each yield is a
+    # finalised, encoded byte string (suitable for StreamingHttpResponse).
+    def _flush(buf: io.StringIO) -> bytes:
+        # UTF-8 BOM is prepended on the first row by the caller so Excel
+        # opens the file in the right encoding without manual import.
+        data = buf.getvalue().encode('utf-8')
+        buf.seek(0)
+        buf.truncate(0)
+        return data
+
+    buf = io.StringIO()
+    writer = csv.writer(buf, quoting=csv.QUOTE_MINIMAL)
+
+    # BOM helps Excel auto-detect UTF-8.
+    yield '﻿'.encode('utf-8')
+
+    writer.writerow(_CSV_HEADERS)
+    yield _flush(buf)
+
+    for row in queryset.iterator(chunk_size=_EXPORT_CHUNK):
+        # ``payload`` is a JSONField — serialise inline with ensure_ascii=False
+        # so Chinese strings render correctly in the CSV cell.
+        try:
+            payload_json = json.dumps(row.payload or {}, ensure_ascii=False, default=str)
+        except (TypeError, ValueError):
+            payload_json = ''
+        writer.writerow([
+            row.created_at.isoformat() if row.created_at else '',
+            str(row.actor_id) if row.actor_id else '',
+            row.action or '',
+            row.target_type or '',
+            str(row.target_id) if row.target_id else '',
+            row.ip or '',
+            (row.user_agent or '')[:512],
+            payload_json,
+        ])
+        yield _flush(buf)
+
+
+def _filename_for_export(workspace_id: str) -> str:
+    """``finance_audit_<workspace>_<utc-stamp>.csv``"""
+    stamp = datetime.now(tz=timezone.utc).strftime('%Y%m%dT%H%M%SZ')
+    safe_ws = ''.join(c for c in str(workspace_id) if c.isalnum() or c in ('-', '_'))[:32]
+    return f'finance_audit_{safe_ws or "default"}_{stamp}.csv'
+
+
+class FinanceAuditLogExportView(APIView):
+    """
+    GET /finance/workspace/<workspace_id>/audit-log/export
+
+    Streams up to ``_EXPORT_MAX_ROWS`` (50,000) matching rows as a CSV
+    attachment. Accepts the same query filters as the list endpoint
+    (target_type, action, actor_id, target_id, date_from, date_to,
+    keyword). Permission contract matches the list view: FINANCE_REVIEW
+    permission OR WORKSPACE_MANAGE role.
+
+    The export itself is audited (action=DOWNLOAD, target_type=OTHER)
+    via the ``@audit_log`` decorator — the audit table records every
+    bulk read of itself, which compliance reviewers expect.
+
+    Format support:
+        ?format=csv   (default; always available)
+        ?format=xlsx  (declined for now — returns 400)
+                      openpyxl is in the dep tree so a future patch can
+                      enable this; deferred to keep the streaming
+                      contract simple for v1.
+    """
+
+    authentication_classes = [TokenAuth]
+
+    @has_permissions(
+        PermissionConstants.FINANCE_REVIEW.get_workspace_permission(),
+        RoleConstants.WORKSPACE_MANAGE.get_workspace_role(),
+    )
+    @audit_log(
+        action=FinanceAuditAction.DOWNLOAD,
+        target_type=FinanceAuditTargetType.OTHER,
+    )
+    def get(self, request: Request, workspace_id):
+        fmt = (request.query_params.get('format') or 'csv').strip().lower()
+        if fmt not in ('csv',):
+            # Explicit reject for xlsx so the client knows to fall back
+            # to CSV. Switching to a 200 with a JSON error envelope would
+            # mask the issue under our usual ``result.error`` shape;
+            # giving DRF the AppApiException keeps the surface honest.
+            from common.exception.app_exception import AppApiException
+            raise AppApiException(
+                400,
+                f"format={fmt!r} is not supported; only 'csv' is currently available "
+                f"(xlsx export is on the roadmap)",
+            )
+
+        qs = _build_queryset(workspace_id, request.query_params)
+        # Slice at the export cap. Note: Django evaluates [:N] lazily,
+        # so this still streams via ``iterator()`` below.
+        qs = qs[:_EXPORT_MAX_ROWS]
+
+        filename = _filename_for_export(workspace_id)
+        response = StreamingHttpResponse(
+            _iter_csv_rows(qs),
+            content_type='text/csv; charset=utf-8',
+        )
+        # ``attachment`` forces a download dialog; the filename is
+        # ASCII-safe (workspace ids are alnum/dash/underscore-stripped).
+        response['Content-Disposition'] = f'attachment; filename="{filename}"'
+        # No length header — streamed response.
+        return response
