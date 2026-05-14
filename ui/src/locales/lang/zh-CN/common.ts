@@ -162,5 +162,10 @@ export default {
     secret: '涉密',
     field: '敏感等级',
     helpText: '文档敏感等级 — 严格控制对外分享许可',
+    edit: '修改敏感等级',
+    editSave: '保存',
+    editSuccess: '已更新',
+    editPermissionDenied: '需要『模板管理员』权限',
+    editMissingDoc: '缺少文档标识，无法保存',
   },
 }

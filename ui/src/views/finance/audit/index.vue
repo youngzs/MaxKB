@@ -5,7 +5,17 @@
         <h2 class="finance-audit__title">{{ $t('views.finance.audit') }}</h2>
         <p class="finance-audit__subtitle">{{ $t('views.finance.auditPage.subtitle') }}</p>
       </div>
-      <el-button @click="onReset">{{ $t('views.finance.auditPage.reset') }}</el-button>
+      <div class="flex" style="gap: 8px">
+        <el-button
+          type="primary"
+          plain
+          :loading="exporting"
+          @click="onExportCsv"
+        >
+          {{ $t('views.finance.auditPage.exportCsv') }}
+        </el-button>
+        <el-button @click="onReset">{{ $t('views.finance.auditPage.reset') }}</el-button>
+      </div>
     </div>
 
     <div class="finance-audit__filters mb-16">
@@ -258,6 +268,7 @@ import { t } from '@/locales'
 import useStore from '@/stores'
 import { hasPermission } from '@/utils/permission'
 import { RoleConst } from '@/utils/permission/data'
+import { exportAuditLog } from '@/api/finance/audit-log'
 import type {
   AuditAction,
   AuditLogEntry,
@@ -435,6 +446,37 @@ const onPageChange = (page: number) => {
 const onSizeChange = (size: number) => {
   store.setPageSize(size)
   fetchList()
+}
+
+// ----- CSV export -----
+const exporting = ref(false)
+
+/**
+ * Build a date-stamped filename and call the export endpoint with the
+ * currently-applied filter set. Server is the source of truth for the
+ * columns — the frontend just relays the filter params verbatim.
+ */
+const onExportCsv = async () => {
+  if (!isAdmin) return
+  const workspaceId = user.getWorkspaceId()
+  if (!workspaceId) return
+  const f = store.filters
+  const params = {
+    target_type: f.targetType || undefined,
+    action: f.action || undefined,
+    actor_id: f.actorId || undefined,
+    target_id: f.targetId || undefined,
+    date_from: f.dateFrom || undefined,
+    date_to: f.dateTo || undefined,
+    keyword: f.keyword || undefined,
+  }
+  const today = new Date().toISOString().slice(0, 10)
+  exporting.value = true
+  try {
+    await exportAuditLog(workspaceId, params, `audit-log-${today}.csv`)
+  } finally {
+    exporting.value = false
+  }
 }
 
 // ----- payload dialog -----

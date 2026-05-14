@@ -1,12 +1,66 @@
 <template>
   <el-dialog
     v-model="visibleProxy"
-    :title="$t('views.finance.send.dialog.title')"
+    :title="
+      resultPanel
+        ? $t('views.finance.send.sentTitle')
+        : $t('views.finance.send.dialog.title')
+    "
     width="780px"
     destroy-on-close
     @open="onOpen"
+    @closed="onClosed"
   >
+    <!-- Result panel — shown after send completes, replaces the form. -->
+    <div v-if="resultPanel" class="finance-send__result">
+      <div
+        v-if="resultPanel.status === 'sent'"
+        class="finance-send__result-banner finance-send__result-banner--ok"
+      >
+        {{
+          $t('views.finance.send.sentAll', {
+            n: resultPanel.recipients.length,
+          })
+        }}
+      </div>
+      <div
+        v-else
+        class="finance-send__result-banner finance-send__result-banner--err"
+      >
+        <strong>{{ $t('views.finance.send.sentFailed') }}</strong>
+        <p
+          v-if="resultPanel.errorMessage"
+          class="finance-send__result-error-msg"
+        >
+          {{ resultPanel.errorMessage }}
+        </p>
+      </div>
+      <ul class="finance-send__result-list">
+        <li
+          v-for="(addr, idx) in resultPanel.recipients"
+          :key="`${addr}-${idx}`"
+          class="finance-send__result-item"
+        >
+          <el-icon
+            v-if="resultPanel.status === 'sent'"
+            class="finance-send__result-icon finance-send__result-icon--ok"
+          >
+            <Check />
+          </el-icon>
+          <el-icon
+            v-else
+            class="finance-send__result-icon finance-send__result-icon--err"
+          >
+            <Close />
+          </el-icon>
+          <span class="finance-send__result-addr">{{ addr }}</span>
+          <span class="finance-send__result-kind">{{ resultPanel.kinds[idx] }}</span>
+        </li>
+      </ul>
+    </div>
+
     <el-form
+      v-else
       ref="formRef"
       :model="form"
       :rules="rules"
@@ -101,15 +155,32 @@
     </el-form>
 
     <template #footer>
-      <el-button @click="visibleProxy = false">{{ $t('common.cancel') }}</el-button>
-      <el-button
-        type="primary"
-        :loading="sending"
-        :disabled="!form.smtpConfigId || !form.emailTemplateId"
-        @click="onSubmit"
-      >
-        {{ $t('views.finance.send.actions.send') }}
-      </el-button>
+      <!-- Result mode: retry on failure + explicit close (no auto-close). -->
+      <template v-if="resultPanel">
+        <el-button
+          v-if="resultPanel.status !== 'sent'"
+          :loading="sending"
+          type="primary"
+          @click="onRetry"
+        >
+          {{ $t('views.finance.send.retry') }}
+        </el-button>
+        <el-button @click="visibleProxy = false">
+          {{ $t('common.close') }}
+        </el-button>
+      </template>
+      <!-- Form mode: standard cancel / send. -->
+      <template v-else>
+        <el-button @click="visibleProxy = false">{{ $t('common.cancel') }}</el-button>
+        <el-button
+          type="primary"
+          :loading="sending"
+          :disabled="!form.smtpConfigId || !form.emailTemplateId"
+          @click="onSubmit"
+        >
+          {{ $t('views.finance.send.actions.send') }}
+        </el-button>
+      </template>
     </template>
   </el-dialog>
 </template>
@@ -117,7 +188,7 @@
 <script setup lang="ts">
 import { computed, reactive, ref } from 'vue'
 import type { FormInstance, FormRules } from 'element-plus'
-import { MsgError, MsgSuccess } from '@/utils/message'
+import { Check, Close } from '@element-plus/icons-vue'
 import { t } from '@/locales'
 import useStore from '@/stores'
 import { listSmtpConfigs } from '@/api/finance/smtp-config'
@@ -128,6 +199,17 @@ import type {
   MaterialsTask,
   SmtpConfig,
 } from '@/api/finance/type'
+
+/** Internal shape used by the result panel — the backend currently returns a
+ *  single combined status for the whole send, so we mirror that status across
+ *  every recipient (to/cc) for now and tag each with its kind. */
+interface SendResult {
+  status: 'sent' | 'failed'
+  recipients: string[]
+  /** Parallel to `recipients`: 'to' | 'cc'. */
+  kinds: string[]
+  errorMessage?: string
+}
 
 const props = defineProps<{
   visible: boolean
@@ -151,6 +233,8 @@ const formRef = ref<FormInstance>()
 const smtpOptions = ref<SmtpConfig[]>([])
 const templateOptions = ref<EmailTemplate[]>([])
 const sending = ref(false)
+/** Non-null after the first send attempt; controls the result-panel UI. */
+const resultPanel = ref<SendResult | null>(null)
 
 const form = reactive<{
   toAddresses: string[]
@@ -262,7 +346,70 @@ const onOpen = async () => {
   form.smtpConfigId = ''
   form.emailTemplateId = ''
   form.attachZip = true
+  resultPanel.value = null
   await fetchSupportRows()
+}
+
+/** Reset the result panel state once Element Plus finishes the close
+ *  animation, so the next opening starts in form mode. */
+const onClosed = () => {
+  resultPanel.value = null
+}
+
+/** Perform the actual send request, building the result-panel state from
+ *  the response. Splitting it out lets the "Retry" button reuse it. */
+const performSend = async () => {
+  if (!props.task) return
+  const wid = user.getWorkspaceId()
+  if (!wid) return
+  sending.value = true
+  try {
+    const res = await sendMaterialsTask(wid, props.task.id, {
+      smtp_config_id: form.smtpConfigId,
+      email_template_id: form.emailTemplateId,
+      to_addresses: form.toAddresses,
+      cc_addresses: form.ccAddresses,
+      attach_zip: form.attachZip,
+    })
+    const recipients: string[] = [
+      ...form.toAddresses,
+      ...form.ccAddresses,
+    ]
+    const kinds: string[] = [
+      ...form.toAddresses.map(() => t('views.finance.send.form.to')),
+      ...form.ccAddresses.map(() => t('views.finance.send.form.cc')),
+    ]
+    if (res.data?.status === 'sent') {
+      resultPanel.value = {
+        status: 'sent',
+        recipients,
+        kinds,
+      }
+      emit('sent')
+    } else {
+      resultPanel.value = {
+        status: 'failed',
+        recipients,
+        kinds,
+        errorMessage: res.data?.error_message || '',
+      }
+    }
+  } catch (err) {
+    // Network / server error — surface as a failed result panel so the user
+    // can retry without re-entering the form.
+    const message = err instanceof Error ? err.message : String(err)
+    resultPanel.value = {
+      status: 'failed',
+      recipients: [...form.toAddresses, ...form.ccAddresses],
+      kinds: [
+        ...form.toAddresses.map(() => t('views.finance.send.form.to')),
+        ...form.ccAddresses.map(() => t('views.finance.send.form.cc')),
+      ],
+      errorMessage: message,
+    }
+  } finally {
+    sending.value = false
+  }
 }
 
 const onSubmit = async () => {
@@ -270,31 +417,14 @@ const onSubmit = async () => {
   if (!props.task) return
   await formRef.value.validate(async (valid) => {
     if (!valid) return
-    const wid = user.getWorkspaceId()
-    if (!wid || !props.task) return
-    sending.value = true
-    try {
-      const res = await sendMaterialsTask(wid, props.task.id, {
-        smtp_config_id: form.smtpConfigId,
-        email_template_id: form.emailTemplateId,
-        to_addresses: form.toAddresses,
-        cc_addresses: form.ccAddresses,
-        attach_zip: form.attachZip,
-      })
-      if (res.data?.status === 'sent') {
-        MsgSuccess(t('views.finance.send.sendSuccess'))
-        emit('sent')
-        visibleProxy.value = false
-      } else {
-        MsgError(
-          t('views.finance.send.sendFailed') +
-            (res.data?.error_message ? `: ${res.data.error_message}` : ''),
-        )
-      }
-    } finally {
-      sending.value = false
-    }
+    await performSend()
   })
+}
+
+/** Resubmit using the same form values; the result panel toggles back to
+ *  the in-flight indicator via the button's `:loading` binding. */
+const onRetry = () => {
+  performSend()
 }
 </script>
 
@@ -326,6 +456,85 @@ const onSubmit = async () => {
     font-family: inherit;
     max-height: 200px;
     overflow: auto;
+  }
+
+  &__result {
+    padding: 4px 0 8px;
+  }
+
+  &__result-banner {
+    padding: 12px 16px;
+    border-radius: 4px;
+    margin-bottom: 16px;
+    font-size: 14px;
+    line-height: 1.5;
+
+    &--ok {
+      background: var(--el-color-success-light-9);
+      color: var(--el-color-success-dark-2);
+      border: 1px solid var(--el-color-success-light-5);
+    }
+
+    &--err {
+      background: var(--el-color-danger-light-9);
+      color: var(--el-color-danger-dark-2);
+      border: 1px solid var(--el-color-danger-light-5);
+    }
+  }
+
+  &__result-error-msg {
+    margin: 6px 0 0;
+    font-size: 13px;
+    white-space: pre-wrap;
+    word-break: break-word;
+  }
+
+  &__result-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    max-height: 280px;
+    overflow-y: auto;
+  }
+
+  &__result-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 12px;
+    border-bottom: 1px solid var(--el-border-color-lighter);
+    font-size: 13px;
+
+    &:last-child {
+      border-bottom: none;
+    }
+  }
+
+  &__result-icon {
+    font-size: 16px;
+    flex-shrink: 0;
+
+    &--ok {
+      color: var(--el-color-success);
+    }
+
+    &--err {
+      color: var(--el-color-danger);
+    }
+  }
+
+  &__result-addr {
+    flex: 1;
+    color: var(--el-text-color-primary);
+    word-break: break-all;
+  }
+
+  &__result-kind {
+    color: var(--el-text-color-secondary);
+    font-size: 12px;
+    padding: 1px 8px;
+    background: var(--el-fill-color);
+    border-radius: 10px;
   }
 }
 </style>

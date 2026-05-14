@@ -160,5 +160,10 @@ export default {
     secret: 'Secret',
     field: 'Sensitivity',
     helpText: 'Document sensitivity level — hard-controls external sharing eligibility.',
+    edit: 'Change sensitivity level',
+    editSave: 'Save',
+    editSuccess: 'Updated',
+    editPermissionDenied: 'Requires "template manager" permission',
+    editMissingDoc: 'Missing document id — cannot save',
   },
 }

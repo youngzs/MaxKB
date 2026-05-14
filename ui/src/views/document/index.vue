@@ -200,10 +200,15 @@
             <el-table-column
               prop="sensitivity_level"
               :label="$t('common.sensitivity.field')"
-              width="110"
+              width="120"
             >
               <template #default="{ row }">
-                <SensitivityBadge :level="row.sensitivity_level" />
+                <SensitivityBadge
+                  :level="row.sensitivity_level"
+                  :document-id="row.id"
+                  editable
+                  @update="(v: string) => (row.sensitivity_level = v)"
+                />
               </template>
             </el-table-column>
             <el-table-column

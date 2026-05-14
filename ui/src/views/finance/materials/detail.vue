@@ -299,9 +299,15 @@
               <el-button
                 v-if="canEdit"
                 size="small"
+                :loading="summarizing"
+                :disabled="summarizing"
                 @click="onSummarize"
               >
-                {{ $t('views.finance.materials.detail.regenerateSummary') }}
+                {{
+                  summarizing
+                    ? $t('views.finance.materials.detail.summarizeBusy')
+                    : $t('views.finance.materials.detail.regenerateSummary')
+                }}
               </el-button>
               <el-button
                 size="small"
@@ -466,7 +472,7 @@
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import type { FormInstance, FormRules } from 'element-plus'
-import { MsgConfirm, MsgError, MsgSuccess } from '@/utils/message'
+import { MsgConfirm, MsgError, MsgSuccess, MsgWarning } from '@/utils/message'
 import { t } from '@/locales'
 import useStore from '@/stores'
 import { hasPermission } from '@/utils/permission'
@@ -493,6 +499,7 @@ const {
 } = useStore()
 
 const loading = ref(false)
+const summarizing = ref(false)
 const focusedItemKey = ref<string>('')
 const focusedDoc = ref<MatchedDocument | null>(null)
 const rejectDialogVisible = ref(false)
@@ -741,8 +748,21 @@ const onRematch = async () => {
 const onSummarize = async () => {
   const wid = user.getWorkspaceId()
   if (!wid || !task.value) return
-  await store.triggerSummarize(wid, task.value.id)
-  MsgSuccess(t('views.finance.materials.detail.summarizeSuccess'))
+  summarizing.value = true
+  try {
+    await store.triggerSummarize(wid, task.value.id)
+    // The summary is regenerated asynchronously, but the trigger acknowledged.
+    // If the latest summary still looks like the backend fallback stub, warn
+    // the user so they don't think AI actually wrote it.
+    const fresh = focusedDoc.value?.ai_summary || ''
+    if (fresh.startsWith('[AI 待生成:')) {
+      MsgWarning(t('views.finance.materials.detail.summarizeFallback'))
+    } else {
+      MsgSuccess(t('views.finance.materials.detail.summarizeSuccess'))
+    }
+  } finally {
+    summarizing.value = false
+  }
 }
 
 const onPack = async () => {

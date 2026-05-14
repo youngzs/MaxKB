@@ -148,9 +148,20 @@
           ×
           {{ $t('views.finance.templateLib.placeholderType.long_text') }}
         </span>
-        <el-button :loading="aiFillingAll" type="primary" plain @click="aiFillAll">
-          <AppIcon iconName="app-magic-stick" class="mr-4" />
-          {{ $t('views.finance.documentsLib.wizard.aiFillAll') }}
+        <el-button
+          :loading="aiFillingAll"
+          :disabled="aiFillingAll"
+          type="primary"
+          plain
+          @click="aiFillAll"
+        >
+          <template v-if="aiFillingAll">
+            {{ $t('views.finance.documentsLib.wizard.aiFillAllBusy', { n: longTextPlaceholders.length }) }}
+          </template>
+          <template v-else>
+            <AppIcon iconName="app-magic-stick" class="mr-4" />
+            {{ $t('views.finance.documentsLib.wizard.aiFillAll') }}
+          </template>
         </el-button>
       </div>
 
@@ -174,22 +185,31 @@
           </template>
 
           <template v-else-if="ph.type === 'long_text'">
-            <div class="finance-wizard__long-text">
+            <div
+              class="finance-wizard__long-text"
+              :class="{ 'finance-wizard__long-text--flash': flashKeys[ph.key] }"
+            >
               <el-input
                 v-model="placeholderValues[ph.key] as string"
                 type="textarea"
                 :rows="4"
+                :disabled="loadingByKey[ph.key]"
               />
               <el-button
-                :loading="aiFillingKey === ph.key"
+                :loading="loadingByKey[ph.key]"
                 size="small"
                 plain
                 type="primary"
                 class="finance-wizard__ai-btn"
                 @click="aiFillOne(ph.key)"
               >
-                <AppIcon iconName="app-magic-stick" class="mr-4" />
-                {{ $t('views.finance.documentsLib.wizard.aiFillOne') }}
+                <template v-if="loadingByKey[ph.key]">
+                  {{ $t('views.finance.documentsLib.wizard.aiFillBusy') }}
+                </template>
+                <template v-else>
+                  <AppIcon iconName="app-magic-stick" class="mr-4" />
+                  {{ $t('views.finance.documentsLib.wizard.aiFillOne') }}
+                </template>
               </el-button>
             </div>
           </template>
@@ -294,7 +314,7 @@
 import { computed, onMounted, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { debounce } from 'lodash'
-import { MsgError, MsgSuccess } from '@/utils/message'
+import { MsgError, MsgSuccess, MsgWarning } from '@/utils/message'
 import { t } from '@/locales'
 import useStore from '@/stores'
 import type {
@@ -327,8 +347,28 @@ const projectStatusFilter = ref<'' | ProjectStatus>('')
 const placeholderValues = reactive<Record<string, string | number>>({})
 const numericValues = reactive<Record<string, number | undefined>>({})
 
-const aiFillingKey = ref<string>('')
+/** Per-field in-flight state. A field is "busy" while its AI fill request
+ *  is pending; the textarea is disabled and the trigger button shows
+ *  a spinner with localized "Generating…" text. */
+const loadingByKey = reactive<Record<string, boolean>>({})
+/** Per-field flash state used to briefly highlight the textarea border
+ *  after a successful fill. Cleared on a timer. */
+const flashKeys = reactive<Record<string, boolean>>({})
 const aiFillingAll = ref(false)
+
+/** Backend fallback marker — when the LLM call fails the server still returns
+ *  a stub like "[AI 待生成: <label>]" instead of a useful value, so we can
+ *  count those separately and warn the user that AI didn't really fill it. */
+const AI_FALLBACK_PREFIX = '[AI 待生成:'
+const isAiFallback = (val: unknown): boolean =>
+  typeof val === 'string' && val.startsWith(AI_FALLBACK_PREFIX)
+
+const flashKey = (key: string) => {
+  flashKeys[key] = true
+  setTimeout(() => {
+    flashKeys[key] = false
+  }, 1500)
+}
 
 const scenarioOptions: { value: TemplateScenario; label: string }[] = [
   { value: 'internal_report', label: t('views.finance.templateLib.scenario.internal_report') },
@@ -506,7 +546,10 @@ const prevStep = () => {
 const aiFillOne = async (key: string) => {
   const workspaceId = user.getWorkspaceId()
   if (!workspaceId || !selectedTemplateId.value || !selectedProjectId.value) return
-  aiFillingKey.value = key
+  loadingByKey[key] = true
+  // Look up the placeholder label so we can surface it in the toast.
+  const ph = selectedTemplate.value?.placeholders.find((p) => p.key === key)
+  const label = ph?.label || key
   try {
     const result = await generationStore.aiFill(
       workspaceId,
@@ -514,14 +557,23 @@ const aiFillOne = async (key: string) => {
       selectedProjectId.value,
       [key],
     )
-    let applied = 0
-    for (const [k, v] of Object.entries(result)) {
-      placeholderValues[k] = v
-      applied += 1
+    const value = result[key]
+    if (value === undefined) {
+      // Server returned no entry for this key — treat as fallback.
+      MsgWarning(t('views.finance.documentsLib.wizard.aiFillFallback', { label }))
+      return
     }
-    MsgSuccess(t('views.finance.documentsLib.wizard.aiFillSuccess', { count: applied }))
+    placeholderValues[key] = value
+    if (isAiFallback(value)) {
+      MsgWarning(t('views.finance.documentsLib.wizard.aiFillFallback', { label }))
+    } else {
+      flashKey(key)
+      MsgSuccess(t('views.finance.documentsLib.wizard.aiFillOk'))
+    }
+  } catch {
+    MsgWarning(t('views.finance.documentsLib.wizard.aiFillFallback', { label }))
   } finally {
-    aiFillingKey.value = ''
+    loadingByKey[key] = false
   }
 }
 
@@ -534,6 +586,8 @@ const aiFillAll = async () => {
   const workspaceId = user.getWorkspaceId()
   if (!workspaceId || !selectedTemplateId.value || !selectedProjectId.value) return
   aiFillingAll.value = true
+  // Mark each long-text field as busy so the per-field spinners also fire.
+  for (const k of keys) loadingByKey[k] = true
   try {
     const result = await generationStore.aiFill(
       workspaceId,
@@ -541,14 +595,30 @@ const aiFillAll = async () => {
       selectedProjectId.value,
       keys,
     )
-    let applied = 0
+    let success = 0
+    let skipped = 0
     for (const [k, v] of Object.entries(result)) {
       placeholderValues[k] = v
-      applied += 1
+      if (isAiFallback(v)) {
+        skipped += 1
+      } else {
+        success += 1
+        flashKey(k)
+      }
     }
-    MsgSuccess(t('views.finance.documentsLib.wizard.aiFillSuccess', { count: applied }))
+    // Keys the server omitted entirely also count as skipped.
+    for (const k of keys) {
+      if (!(k in result)) skipped += 1
+    }
+    MsgSuccess(
+      t('views.finance.documentsLib.wizard.aiFillSummary', {
+        success,
+        skipped,
+      }),
+    )
   } finally {
     aiFillingAll.value = false
+    for (const k of keys) loadingByKey[k] = false
   }
 }
 
@@ -658,6 +728,12 @@ onMounted(async () => {
 
   &__long-text {
     position: relative;
+    border-radius: 4px;
+    transition: box-shadow 1s ease;
+
+    &--flash {
+      box-shadow: 0 0 0 2px var(--el-color-success);
+    }
   }
 
   &__ai-btn {

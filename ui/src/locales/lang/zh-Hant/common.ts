@@ -159,5 +159,10 @@ export default {
     secret: '涉密',
     field: '敏感等級',
     helpText: '文件敏感等級 — 嚴格控制對外分享許可',
+    edit: '修改敏感等級',
+    editSave: '儲存',
+    editSuccess: '已更新',
+    editPermissionDenied: '需要『範本管理員』權限',
+    editMissingDoc: '缺少文件識別碼，無法儲存',
   },
 }
