@@ -106,18 +106,34 @@ def _document_needs_ocr(document) -> bool:
 
 def _replace_paragraphs(document, content_list):
     """Wipe existing paragraphs (and their vectors) and bulk-insert
-    OCR-derived ones. Skip any paragraph that's only image placeholders."""
-    from knowledge.models import Document, Paragraph
+    OCR-derived ones. Skip any paragraph that's only image placeholders.
+
+    The whole swap runs inside a DB transaction so a failure mid-write can
+    never leave the document with its old paragraphs deleted but the new
+    OCR'd ones not yet inserted — it's all-or-nothing."""
+    from django.db import transaction
+
+    from knowledge.models import Paragraph
     from knowledge.serializers.paragraph import delete_problems_and_mappings
     from knowledge.task.embedding import delete_embedding_by_document
 
-    old_ids = list(
-        Paragraph.objects.filter(document_id=document.id).values_list('id', flat=True)
-    )
-    if old_ids:
-        delete_problems_and_mappings([str(pid) for pid in old_ids])
-    delete_embedding_by_document(str(document.id))
-    Paragraph.objects.filter(document_id=document.id).delete()
+    with transaction.atomic():
+        old_ids = list(
+            Paragraph.objects.filter(document_id=document.id).values_list('id', flat=True)
+        )
+        if old_ids:
+            delete_problems_and_mappings([str(pid) for pid in old_ids])
+        delete_embedding_by_document(str(document.id))
+        Paragraph.objects.filter(document_id=document.id).delete()
+
+        return _bulk_insert_ocr_paragraphs(document, content_list)
+
+
+def _bulk_insert_ocr_paragraphs(document, content_list):
+    """Build Paragraph rows from OCR content_list and bulk-insert them.
+    Returns (inserted_count, skipped_image_only, total_chars). Caller is
+    responsible for running this inside the same transaction as the wipe."""
+    from knowledge.models import Document, Paragraph
 
     new_rows = []
     total_chars = 0
@@ -202,6 +218,14 @@ def ocr_pdf_document(document_id):
         handle.enable_sync_ocr = True  # turn OCR on for THIS invocation only
 
         fake_upload = _BytesUpload(pdf_bytes, document.name or 'document.pdf')
+        # Robustness: OCR is a long, multi-page operation. _try_ocr_empty_pages
+        # already isolates per-page failures (one bad page never aborts the
+        # rest) and collects partial progress before returning, so handle()
+        # normally returns whatever pages DID succeed. The try/except here is
+        # the outer safety net — if handle() itself raises after some pages
+        # were OCR'd, we still fall through with whatever content_list we got
+        # rather than silently discarding all partial progress.
+        result = None
         try:
             result = handle.handle(
                 fake_upload,
@@ -213,9 +237,9 @@ def ocr_pdf_document(document_id):
             )
         except Exception as e:
             maxkb_logger.error(
-                f"OCR task: PdfSplitHandle failed for {document_id}: {e}\n{traceback.format_exc()}"
+                f"OCR task: PdfSplitHandle raised for {document_id} "
+                f"(persisting any partial progress): {e}\n{traceback.format_exc()}"
             )
-            return
 
         content_list = (result or {}).get('content') or []
         if not content_list:
@@ -239,7 +263,20 @@ def ocr_pdf_document(document_id):
             )
             return
 
-        inserted, skipped, total = _replace_paragraphs(document, content_list)
+        # Persist whatever OCR recovered. _replace_paragraphs runs inside a DB
+        # transaction so the swap (delete old -> insert new) is atomic: either
+        # the document ends up with the full OCR'd paragraph set, or it is left
+        # untouched — it can never be left half-wiped. Partial OCR progress
+        # (pages that succeeded before a later page failed) is already baked
+        # into content_list, so this write durably captures it.
+        try:
+            inserted, skipped, total = _replace_paragraphs(document, content_list)
+        except Exception as e:
+            maxkb_logger.error(
+                f"OCR task: failed to persist OCR paragraphs for {document_id}: "
+                f"{e}\n{traceback.format_exc()}"
+            )
+            return
         maxkb_logger.info(
             f"OCR task: document {document_id} -> {inserted} paragraph(s), "
             f"{total} chars (skipped {skipped} image-only)."

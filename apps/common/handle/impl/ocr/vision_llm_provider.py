@@ -7,12 +7,19 @@
 """
 import base64
 import concurrent.futures
+import os
 from imghdr import what
 
 from langchain_core.messages import HumanMessage
 
+from common.handle.impl.ocr.image_preprocess import preprocess_for_ocr
 from common.handle.impl.ocr.provider import OcrProvider, OcrError, DEFAULT_OCR_PROMPT
 from common.utils.logger import maxkb_logger
+
+# Image preprocessing level applied before the model call. Env-gated so ops can
+# switch to 'aggressive' (heavier watermark suppression) or 'off' without a
+# code change. See image_preprocess.preprocess_for_ocr for the level semantics.
+_OCR_PREPROCESS_LEVEL = os.environ.get('MAXKB_OCR_PREPROCESS_LEVEL', 'standard')
 
 # Hard ceiling for a single-page vision-LLM OCR call. Some providers leave the
 # HTTP connection hanging indefinitely on a problematic page instead of
@@ -32,6 +39,9 @@ class VisionLlmOcrProvider(OcrProvider):
     def recognize(self, image_bytes: bytes) -> str:
         if not image_bytes:
             return ''
+        # 先做轻量预处理（灰度 + 自动对比度，可选水印抑制），提升识别质量。
+        # preprocess_for_ocr 永不抛异常 —— 失败时原样返回输入字节。
+        image_bytes = preprocess_for_ocr(image_bytes, level=_OCR_PREPROCESS_LEVEL)
         # 检测格式（PNG/JPEG/...），imghdr 返回 'png'/'jpeg' 等小写名
         img_format = what(None, image_bytes) or 'png'
         b64 = base64.b64encode(image_bytes).decode('utf-8')

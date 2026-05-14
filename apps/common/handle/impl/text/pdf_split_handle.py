@@ -7,6 +7,7 @@
 @desc:
 """
 
+import concurrent.futures
 import os
 import re
 import tempfile
@@ -25,8 +26,14 @@ from common.utils.split_model import SplitModel, smart_split_paragraph
 
 # 当 pypdf 从一页抽到的文字短于该阈值时，认为是扫描页，尝试 OCR fallback
 _OCR_PAGE_TEXT_THRESHOLD = 10
-# OCR 时 PDF 页面渲染 DPI；越高越清晰但越慢/越占内存
-_OCR_PAGE_DPI = 200
+# OCR 时 PDF 页面渲染 DPI；越高越清晰但越慢/越占内存。
+# 300 DPI 比 200 明显更锐利；配合 image_preprocess 的灰度化，字节体积仍可控。
+_OCR_PAGE_DPI = 300
+# 空白页 OCR 的并发度。每页一次视觉模型调用是 IO 密集型（等远端 LLM），
+# 用线程池并发能把 41 页 PDF 从 ~14 分钟串行降到 ~3 分钟。
+# 每页调用本身已有 120s 硬超时（见 vision_llm_provider），并发池只需等所有
+# future 收敛即可，不再叠加外层超时。可用 MAXKB_OCR_CONCURRENCY 调整。
+_OCR_MAX_CONCURRENCY = int(os.environ.get('MAXKB_OCR_CONCURRENCY', '6'))
 
 default_pattern_list = [
     re.compile("(?<=^)# .*|(?<=\\n)# .*"),
@@ -127,12 +134,43 @@ class PdfSplitHandle(BaseSplitHandle):
         return ocr_provider.recognize(png_bytes)
 
     @staticmethod
+    def _ocr_pdf_page_with_retry(pdf_path, page_num, ocr_provider, retries=1):
+        """带重试的单页 OCR。
+        - _ocr_pdf_page 抛异常、或返回空/纯空白文本，都视为失败并重试
+        - 重试之间 sleep 2s，避开 provider 的瞬时抖动（限流 / 连接复位）
+        - 重试耗尽后记 warning 并返回 ''（让该页保持空白，绝不抛出）
+        并发 OCR 循环调用的是本函数，而不是 _ocr_pdf_page。"""
+        attempts = retries + 1
+        last_err = None
+        for attempt in range(1, attempts + 1):
+            try:
+                ocr_text = PdfSplitHandle._ocr_pdf_page(pdf_path, page_num, ocr_provider)
+                if ocr_text and ocr_text.strip():
+                    return ocr_text
+                last_err = 'empty/whitespace-only result'
+            except Exception as e:
+                last_err = e
+            if attempt < attempts:
+                maxkb_logger.info(
+                    f"PDF OCR page {page_num + 1} attempt {attempt}/{attempts} "
+                    f"failed ({last_err}); retrying in 2s"
+                )
+                time.sleep(2)
+        maxkb_logger.warning(
+            f"PDF OCR page {page_num + 1} gave up after {attempts} attempt(s): {last_err}"
+        )
+        return ''
+
+    @staticmethod
     def _try_ocr_empty_pages(pdf_path, page_lines):
         """对 page_lines 中空（或几乎空）的页做 OCR fallback。
         - OCR provider 只在确实有空页时才加载（懒初始化）
         - OCR 未配置时直接跳过，不影响纯文本 PDF
-        - 单页失败不影响其他页
+        - 单页失败不影响其他页（错误隔离 + 单页重试）
         - 渲染依赖 pymupdf（fitz），未安装时记 warning 并跳过
+        - 各空白页用线程池并发 OCR，结果先收集到 dict 再统一回写 page_lines，
+          避免多线程直接写同一个 list（虽然写不同下标在 CPython 是安全的，
+          collect-then-apply 更稳妥也更易读）
         """
         empty_indices = [
             i for i, lines in enumerate(page_lines)
@@ -164,19 +202,46 @@ class PdfSplitHandle(BaseSplitHandle):
             )
             return
 
-        for idx in empty_indices:
-            try:
-                ocr_text = PdfSplitHandle._ocr_pdf_page(pdf_path, idx, ocr_provider)
-            except Exception as e:
-                maxkb_logger.error(f"PDF OCR failed on page {idx + 1}: {e}")
-                continue
-            if not ocr_text:
-                continue
-            # OCR 文本无字号；填 0，后续会被归类为正文段落
-            page_lines[idx] = [
-                (line.strip(), 0) for line in ocr_text.split('\n') if line.strip()
-            ]
-            maxkb_logger.info(f"PDF OCR recovered page {idx + 1}: {len(ocr_text)} chars")
+        # 并发 OCR：每个空白页提交一个 _ocr_pdf_page_with_retry 任务。
+        # 单页内部已有 120s 硬超时 + 重试，这里不再叠加外层超时，只等全部收敛。
+        max_workers = max(1, min(_OCR_MAX_CONCURRENCY, len(empty_indices)))
+        results: dict[int, list] = {}
+        with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
+            future_to_idx = {
+                executor.submit(
+                    PdfSplitHandle._ocr_pdf_page_with_retry, pdf_path, idx, ocr_provider
+                ): idx
+                for idx in empty_indices
+            }
+            for future in concurrent.futures.as_completed(future_to_idx):
+                idx = future_to_idx[future]
+                try:
+                    ocr_text = future.result()
+                except Exception as e:
+                    # _ocr_pdf_page_with_retry 不抛异常；这里只是兜底，
+                    # 保证单页崩溃绝不影响其他页。
+                    maxkb_logger.error(f"PDF OCR failed on page {idx + 1}: {e}")
+                    continue
+                if not ocr_text or not ocr_text.strip():
+                    continue
+                # OCR 文本无字号；填 0，后续会被归类为正文段落
+                results[idx] = [
+                    (line.strip(), 0) for line in ocr_text.split('\n') if line.strip()
+                ]
+                maxkb_logger.info(
+                    f"PDF OCR recovered page {idx + 1}: {len(ocr_text)} chars"
+                )
+
+        # 收集完毕后统一回写
+        for idx, lines in results.items():
+            page_lines[idx] = lines
+
+        recovered = len(results)
+        failed = len(empty_indices) - recovered
+        maxkb_logger.info(
+            f"PDF OCR: {recovered}/{len(empty_indices)} pages recovered, "
+            f"{failed} failed/empty"
+        )
 
     @staticmethod
     def handle_pdf_content(file, pdf_document, pdf_path=None, enable_ocr=False):
