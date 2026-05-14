@@ -856,6 +856,18 @@ class DocumentSerializers(serializers.Serializer):
         def post_embedding(result, document_id, knowledge_id):
             DocumentSerializers.Operate(
                 data={'knowledge_id': knowledge_id, 'document_id': document_id}).refresh()
+            # 扫描版 PDF 同步路径不再跑 OCR（避免 nginx / gunicorn 超时），
+            # 改在 celery 后台对每份 PDF 文档跑一次 OCR fallback；
+            # 任务自身会判断是否真的需要 OCR，是否需要重新 embedding。
+            try:
+                from knowledge.task.ocr import enqueue_ocr_if_pdf
+                enqueue_ocr_if_pdf(document_id)
+            except Exception as e:
+                # OCR 是增强而非必备，落库已经完成，这里仅记日志。
+                from common.utils.logger import maxkb_logger
+                maxkb_logger.warning(
+                    f"post_embedding: failed to enqueue OCR for {document_id}: {e}"
+                )
             return result
 
         @post(post_function=post_embedding)

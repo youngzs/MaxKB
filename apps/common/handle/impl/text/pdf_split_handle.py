@@ -53,6 +53,10 @@ def get_pdf_object(value):
 
 
 class PdfSplitHandle(BaseSplitHandle):
+    # OCR 默认走 celery 异步任务（apps/knowledge/task/ocr.py），避免阻塞 split 请求线程。
+    # 想在 split 同步路径里跑 OCR（旧行为），在调用前把这个属性置 True。
+    enable_sync_ocr = False
+
     def handle(
         self,
         file,
@@ -89,7 +93,10 @@ class PdfSplitHandle(BaseSplitHandle):
                     return {"name": file.name, "content": result}
 
                 # 没有目录的pdf
-                content = self.handle_pdf_content(file, pdf_document, pdf_path=temp_file_path)
+                content = self.handle_pdf_content(
+                    file, pdf_document, pdf_path=temp_file_path,
+                    enable_ocr=self.enable_sync_ocr,
+                )
 
                 if pattern_list is not None and len(pattern_list) > 0:
                     split_model = SplitModel(pattern_list, with_filter, limit)
@@ -172,7 +179,7 @@ class PdfSplitHandle(BaseSplitHandle):
             maxkb_logger.info(f"PDF OCR recovered page {idx + 1}: {len(ocr_text)} chars")
 
     @staticmethod
-    def handle_pdf_content(file, pdf_document, pdf_path=None):
+    def handle_pdf_content(file, pdf_document, pdf_path=None, enable_ocr=False):
         # 第一步:收集所有字体大小
         font_sizes = []
         page_lines = []
@@ -183,8 +190,9 @@ class PdfSplitHandle(BaseSplitHandle):
                 if line_text and font_size > 0:
                     font_sizes.append(font_size)
 
-        # 扫描页 OCR fallback（仅当存在空页且 pdf_path 可用时）
-        if pdf_path:
+        # 扫描页 OCR fallback。默认走 celery 异步任务（避免阻塞 split 请求），
+        # 仅当调用方显式开启 enable_ocr 时才在本线程跑 OCR。
+        if pdf_path and enable_ocr:
             PdfSplitHandle._try_ocr_empty_pages(pdf_path, page_lines)
 
         # 计算正文字体大小(众数)
@@ -214,9 +222,12 @@ class PdfSplitHandle(BaseSplitHandle):
                 else:  # 正文
                     content += f"{text}\n"
 
-            for image_index in range(PdfSplitHandle.get_page_image_count(page)):
-                content += f"![image](image_{page_num}_{image_index})\n\n"
-
+            # NOTE: 旧版本会在这里给每个内嵌图片输出
+            #   ![image](image_<page>_<index>)
+            # 占位符，但 image_<page>_<index> 不对应任何已保存的 File，前端
+            # 渲染只能看到一堆"破图"。源 PDF 始终可在文档详情里下载，所以
+            # 直接丢弃这些悬挂引用，不再污染段落。需要图片的话需要先把
+            # 内嵌图片走 save_image 入库并改写 markdown，再恢复输出。
             content = content.replace("\0", "")
 
             elapsed_time = time.time() - start_time
