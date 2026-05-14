@@ -195,4 +195,21 @@ urlpatterns = [
         views.FinanceWorkflowRunListView.as_view(),
         name='workflow_run_list',
     ),
+    # ---- Gate 8 Track B: stuck-task recovery (retry / cancel) ----
+    path(
+        'workspace/<str:workspace_id>/workflow-run/<uuid:pk>/retry',
+        views.WorkflowRunRetryView.as_view(),
+        name='workflow_run_retry',
+    ),
+    path(
+        'workspace/<str:workspace_id>/workflow-run/<uuid:pk>/cancel',
+        views.WorkflowRunCancelView.as_view(),
+        name='workflow_run_cancel',
+    ),
+    # ---- Gate 8 Track C: LLM-availability probe for the AI banner ----
+    path(
+        'workspace/<str:workspace_id>/ai-status',
+        views.FinanceAiStatusView.as_view(),
+        name='ai_status',
+    ),
 ]

@@ -7,10 +7,22 @@ export default {
   intel: 'News Feed',
   template: 'Templates',
   audit: 'Audit Log',
+  workerHealth: {
+    title: 'Celery',
+    online: 'Online',
+    offline: 'Offline',
+    tasksRegistered: '{n} finance task(s)',
+  },
   comingSoon: 'Coming soon',
   planning: 'Planned',
   overviewDesc:
     'One-stop management for finance project materials, documents, progress, and compliance audit.',
+  aiBanner: {
+    message:
+      'No AI model is configured for this workspace. Parsing, summary, and fill features will use placeholder content. Configure an LLM model under the "Models" menu.',
+    dismiss: 'Don\'t show again',
+    configureCta: 'Configure now',
+  },
   cards: {
     project: {
       title: 'Project Management',
@@ -643,6 +655,7 @@ export default {
       duration: 'Duration',
       retries: 'Retries',
       error: 'Error',
+      actions: 'Actions',
     },
     status: {
       queued: 'Queued',
@@ -650,6 +663,24 @@ export default {
       succeeded: 'Succeeded',
       failed: 'Failed',
       retrying: 'Retrying',
+      cancelled: 'Cancelled',
     },
+    retry: 'Retry',
+    cancel: 'Cancel',
+    cancelDismiss: 'Keep running',
+    cancelConfirm:
+      'Cancel this run? The task will be revoked and the related item marked as failed.',
+    retrySuccess: 'Retry dispatched',
+    retryFailed: 'Failed to dispatch retry',
+    cancelSuccess: 'Run cancelled',
+    cancelFailed: 'Failed to cancel run',
+    staleBadge: '⚠ Possibly stuck',
+    staleHint:
+      'This run has been in flight for over 15 minutes — the worker may have been lost.',
+    engine: 'Engine',
+    nodeProgress: 'Node progress',
+    noDetail: 'No execution detail recorded',
+    inputsSummary: 'Inputs summary',
+    outputsSummary: 'Outputs summary',
   },
 }

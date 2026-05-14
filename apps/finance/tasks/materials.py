@@ -19,6 +19,23 @@
          the broker can re-queue (up to ``max_retries`` configured below).
       7. On *business* failure: status → FAILED with error_message, audit
          log row written, no retry.
+
+    Gate 8 Track A — workflow-engine wiring decision:
+      The ``__internal_materials_packager`` preset workflow is intentionally
+      NOT wired to the engine this gate. Two blockers, both documented in
+      detail in ``finance/service/workflow_executor.py``:
+        (a) It uses a ``loop-node`` whose per-item context (``current_item``,
+            ``loop_results.*``) would need careful headless re-plumbing.
+        (b) Its ``zip-pack-node`` (like ``docx-render-node``) consumes
+            ``*_reference`` arrays that have no reference-resolution
+            implementation — the JSON ``_install_note`` calls it a skeleton
+            placeholder.
+      Wiring it reliably means rewriting the preset JSON + implementing the
+      node reference contracts — out of scope for a last-mile task and risky
+      to the working async pipeline. parse/match/pack therefore stay on the
+      direct-service-call path. We still stamp ``engine: 'direct'`` onto the
+      WorkflowRun.payload so the audit trail is uniform with documents.
+      TODO(gate-9+): complete the materials preset + wire via run_workflow.
 """
 from __future__ import annotations
 
@@ -49,6 +66,32 @@ def _audit(target_id, action: str, payload: dict, workspace_id, actor_id):
         )
     except Exception as e:  # noqa: BLE001
         maxkb_logger.error(f'[finance.tasks.materials] audit failed: {e}', exc_info=True)
+
+
+def _record_run_engine(run, *, task_name: str, target_id, output: dict):
+    """
+    Stamp the engine/io-summary block onto ``WorkflowRun.payload`` so the
+    audit trail can tell engine runs from direct-call runs. Materials always
+    runs ``engine: 'direct'`` this gate (see module docstring). Never raises.
+    """
+    if run is None:
+        return
+    try:
+        from finance.service.workflow_executor import summarize_io
+        summary = summarize_io(
+            engine='direct', app_id=None,
+            inputs={'materials_task_id': str(target_id)},
+            output=output or {},
+        )
+        merged = dict(run.payload or {})
+        merged.update(summary)
+        run.payload = merged
+        run.save(update_fields=['payload', 'updated_at'])
+    except Exception as e:  # noqa: BLE001
+        maxkb_logger.error(
+            f'[finance.tasks.materials] _record_run_engine failed: {e}',
+            exc_info=True,
+        )
 
 
 def _load_task(task_id):
@@ -107,8 +150,10 @@ def async_parse(self, materials_task_id, run_id=None):
     _set_status(instance, MaterialsTaskStatus.PARSING, error_message='')
     try:
         instance = _do_parse(instance, workspace_id=workspace_id)
-        workflow_runtime.mark_succeeded(
-            run, t0, output={'parsed_items_count': len(instance.parsed_items or [])}
+        _parse_output = {'parsed_items_count': len(instance.parsed_items or [])}
+        workflow_runtime.mark_succeeded(run, t0, output=_parse_output)
+        _record_run_engine(
+            run, task_name=_NAME_PARSE, target_id=instance.id, output=_parse_output
         )
         _audit(
             target_id=str(instance.id),
@@ -188,8 +233,10 @@ def async_match(self, materials_task_id, user_max_sensitivity=None, run_id=None)
         # Match leaves status as DRAFT (matched_documents populated). The
         # MATCHING flag was a transient marker for the poller.
         _set_status(instance, MaterialsTaskStatus.DRAFT)
-        workflow_runtime.mark_succeeded(
-            run, t0, output={'matched_count': len(instance.matched_documents or [])}
+        _match_output = {'matched_count': len(instance.matched_documents or [])}
+        workflow_runtime.mark_succeeded(run, t0, output=_match_output)
+        _record_run_engine(
+            run, task_name=_NAME_MATCH, target_id=instance.id, output=_match_output
         )
         _audit(
             target_id=str(instance.id),
@@ -257,8 +304,10 @@ def async_pack(self, materials_task_id, item_groups=None, run_id=None):
         instance = _do_pack(
             instance, workspace_id=workspace_id, override_groups=item_groups
         )
-        workflow_runtime.mark_succeeded(
-            run, t0, output={'zip_oss_key': instance.zip_oss_key}
+        _pack_output = {'zip_oss_key': instance.zip_oss_key}
+        workflow_runtime.mark_succeeded(run, t0, output=_pack_output)
+        _record_run_engine(
+            run, task_name=_NAME_PACK, target_id=instance.id, output=_pack_output
         )
         _audit(
             target_id=str(instance.id),

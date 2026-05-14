@@ -8,6 +8,8 @@
       </el-button>
     </div>
 
+    <FinanceAiBanner />
+
     <div class="finance-template__filters mb-16">
       <el-radio-group v-model="scenarioFilter" @change="onScenarioChange">
         <el-radio-button label="">
@@ -137,6 +139,7 @@ import { hasPermission } from '@/utils/permission'
 import { PermissionConst, RoleConst } from '@/utils/permission/data'
 import type { Template, TemplateScenario } from '@/api/finance/type'
 import UploadTemplateDialog from './components/UploadTemplateDialog.vue'
+import FinanceAiBanner from '@/components/finance-ai-banner/index.vue'
 
 const router = useRouter()
 const { user, financeTemplate: store } = useStore()

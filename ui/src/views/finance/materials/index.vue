@@ -10,6 +10,8 @@
       </el-button>
     </div>
 
+    <FinanceAiBanner />
+
     <div class="finance-materials__filters mb-16 flex">
       <el-select
         v-model="projectFilter"
@@ -203,6 +205,7 @@ import { hasPermission } from '@/utils/permission'
 import { PermissionConst, RoleConst } from '@/utils/permission/data'
 import type { MaterialsTask, MaterialsTaskStatus } from '@/api/finance/type'
 import CreateTaskDialog from './components/CreateTaskDialog.vue'
+import FinanceAiBanner from '@/components/finance-ai-banner/index.vue'
 
 const router = useRouter()
 const {
