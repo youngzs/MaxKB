@@ -91,9 +91,21 @@
       </el-table-column>
     </el-table>
 
-    <div v-if="list.length === 0 && !loading" class="finance-smtp__empty">
-      {{ $t('views.finance.smtp.empty') }}
-    </div>
+    <el-empty
+      v-if="list.length === 0 && !loading"
+      :image-size="100"
+      class="finance-smtp__empty"
+    >
+      <template #description>
+        <div class="finance-empty-state">
+          <h3>{{ $t('views.finance.smtp.emptyState.title') }}</h3>
+          <p class="text-secondary">{{ $t('views.finance.smtp.emptyState.subtitle') }}</p>
+          <el-button v-if="canSend" type="primary" @click="openCreate">
+            {{ $t('views.finance.smtp.emptyState.cta') }}
+          </el-button>
+        </div>
+      </template>
+    </el-empty>
 
     <!-- Create / Edit dialog -->
     <el-dialog
@@ -102,6 +114,7 @@
         ? $t('views.finance.smtp.dialog.editTitle')
         : $t('views.finance.smtp.dialog.createTitle')"
       width="640px"
+      :fullscreen="isMobile"
       destroy-on-close
     >
       <el-form
@@ -206,6 +219,7 @@
       v-model="testVisible"
       :title="$t('views.finance.smtp.dialog.testTitle')"
       width="420px"
+      :fullscreen="isMobile"
     >
       <el-form label-position="top">
         <el-form-item :label="$t('views.finance.smtp.form.testTo')">
@@ -235,6 +249,7 @@ import { t } from '@/locales'
 import useStore from '@/stores'
 import { hasPermission } from '@/utils/permission'
 import { PermissionConst, RoleConst } from '@/utils/permission/data'
+import { useIsMobile } from '@/composables/useIsMobile'
 import {
   createSmtpConfig,
   deleteSmtpConfig,
@@ -249,6 +264,7 @@ import type {
 } from '@/api/finance/type'
 
 const { user } = useStore()
+const { isMobile } = useIsMobile()
 
 const list = ref<SmtpConfig[]>([])
 const loading = ref(false)
@@ -457,6 +473,20 @@ onMounted(() => {
     color: var(--el-text-color-secondary);
     text-align: center;
     padding: 32px;
+  }
+}
+
+.finance-empty-state {
+  text-align: center;
+  h3 {
+    margin: 8px 0 4px;
+    font-size: 16px;
+    font-weight: 600;
+    color: var(--el-text-color-primary);
+  }
+  p {
+    margin: 0 0 12px;
+    color: var(--el-text-color-regular);
   }
 }
 </style>

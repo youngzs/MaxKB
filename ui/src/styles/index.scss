@@ -4,5 +4,8 @@
 @use './app.scss';
 @use './component.scss';
 @use './md-editor.scss';
+// Finance workspace shared mobile-responsive rules (Gate 7 Track C).
+// Loaded globally; all rules are inside `@media (max-width: 640px)`.
+@use '../views/finance/finance.scss';
 @import 'nprogress/nprogress.css';
 @import 'md-editor-v3/lib/style.css';

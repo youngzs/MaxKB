@@ -134,6 +134,15 @@
             {{ $t('views.finance.documentsLib.actions.revoke') }}
           </el-button>
           <el-button
+            v-if="row.status === 'generating' || row.status === 'failed'"
+            link
+            type="primary"
+            size="small"
+            @click="openRunLog(row)"
+          >
+            {{ $t('views.finance.workflowRun.openLogLink') }}
+          </el-button>
+          <el-button
             link
             type="primary"
             size="small"
@@ -146,17 +155,23 @@
       </el-table-column>
 
       <template #empty>
-        <div class="finance-documents__empty">
-          <p>
-            {{
-              isFiltered
-                ? $t('views.finance.documentsLib.emptyFiltered')
-                : $t('views.finance.documentsLib.empty')
-            }}
-          </p>
-          <el-button v-if="canEdit && !isFiltered" type="primary" @click="goWizard">
-            {{ $t('views.finance.documentsLib.newGeneration') }}
-          </el-button>
+        <el-empty
+          v-if="!isFiltered"
+          :image-size="100"
+          class="finance-documents__empty"
+        >
+          <template #description>
+            <div class="finance-empty-state">
+              <h3>{{ $t('views.finance.documentsLib.emptyState.title') }}</h3>
+              <p class="text-secondary">{{ $t('views.finance.documentsLib.emptyState.subtitle') }}</p>
+              <el-button v-if="canEdit" type="primary" @click="goWizard">
+                {{ $t('views.finance.documentsLib.emptyState.cta') }}
+              </el-button>
+            </div>
+          </template>
+        </el-empty>
+        <div v-else class="finance-documents__empty">
+          <p>{{ $t('views.finance.documentsLib.emptyFiltered') }}</p>
         </div>
       </template>
     </el-table>
@@ -187,11 +202,20 @@
         :generation-id="previewTarget.id"
       />
     </el-drawer>
+
+    <!-- Workflow run drawer (Gate 7 Track B) -->
+    <WorkflowRunDrawer
+      v-if="runLogTarget"
+      v-model:visible="runLogDrawerVisible"
+      :workspace-id="runLogWorkspaceId"
+      target-type="DOC_GENERATION"
+      :target-id="runLogTarget.id"
+    />
   </div>
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { MsgConfirm, MsgSuccess } from '@/utils/message'
 import { t } from '@/locales'
@@ -200,6 +224,7 @@ import { hasPermission } from '@/utils/permission'
 import { PermissionConst, RoleConst } from '@/utils/permission/data'
 import type { Generation, GenerationStatus } from '@/api/finance/type'
 import DocxPreview from '@/components/docx-preview/index.vue'
+import WorkflowRunDrawer from '../components/WorkflowRunDrawer.vue'
 
 const router = useRouter()
 const {
@@ -214,6 +239,17 @@ const statusFilter = ref<'' | GenerationStatus>(store.statusFilter)
 
 const previewDrawerVisible = ref(false)
 const previewTarget = ref<Generation | null>(null)
+
+// Gate 7 Track B: workflow-run drawer for in-flight / failed generations.
+const runLogDrawerVisible = ref(false)
+const runLogTarget = ref<Generation | null>(null)
+const runLogWorkspaceId = computed<string>(() =>
+  String(user.getWorkspaceId() || ''),
+)
+const openRunLog = (row: Generation) => {
+  runLogTarget.value = row
+  runLogDrawerVisible.value = true
+}
 
 const canEdit = computed(() =>
   hasPermission(
@@ -302,6 +338,30 @@ const fetchList = () => {
   const workspaceId = user.getWorkspaceId()
   if (!workspaceId) return
   store.fetchList(workspaceId)
+}
+
+// Gate 7 Track B: generation is now async (status stays `generating` until
+// the Celery worker finishes). Poll lightly while any visible row is still
+// in flight so the table catches up without a manual refresh.
+let generatingPoll: ReturnType<typeof setInterval> | null = null
+const stopGeneratingPoll = () => {
+  if (generatingPoll) {
+    clearInterval(generatingPoll)
+    generatingPoll = null
+  }
+}
+const startGeneratingPoll = () => {
+  stopGeneratingPoll()
+  generatingPoll = setInterval(() => {
+    const hasInFlight = (store.list || []).some(
+      (g: Generation) => g.status === 'generating',
+    )
+    if (!hasInFlight) {
+      stopGeneratingPoll()
+      return
+    }
+    fetchList()
+  }, 4000)
 }
 
 const onProjectChange = (val: string | undefined) => {
@@ -429,6 +489,20 @@ onMounted(async () => {
   &__pagination {
     justify-content: flex-end;
     margin-top: 16px;
+  }
+}
+
+.finance-empty-state {
+  text-align: center;
+  h3 {
+    margin: 8px 0 4px;
+    font-size: 16px;
+    font-weight: 600;
+    color: var(--el-text-color-primary);
+  }
+  p {
+    margin: 0 0 12px;
+    color: var(--el-text-color-regular);
   }
 }
 </style>

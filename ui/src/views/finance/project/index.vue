@@ -140,21 +140,23 @@
       </el-table-column>
 
       <template #empty>
-        <div class="finance-project__empty">
-          <p>
-            {{
-              isFiltered
-                ? $t('views.finance.project.emptyFiltered')
-                : $t('views.finance.project.empty')
-            }}
-          </p>
-          <el-button
-            v-if="canEdit && !isFiltered"
-            type="primary"
-            @click="openCreate"
-          >
-            {{ $t('views.finance.project.newProject') }}
-          </el-button>
+        <el-empty
+          v-if="!isFiltered"
+          :image-size="100"
+          class="finance-project__empty"
+        >
+          <template #description>
+            <div class="finance-empty-state">
+              <h3>{{ $t('views.finance.project.emptyState.title') }}</h3>
+              <p class="text-secondary">{{ $t('views.finance.project.emptyState.subtitle') }}</p>
+              <el-button v-if="canEdit" type="primary" @click="openCreate">
+                {{ $t('views.finance.project.emptyState.cta') }}
+              </el-button>
+            </div>
+          </template>
+        </el-empty>
+        <div v-else class="finance-project__empty">
+          <p>{{ $t('views.finance.project.emptyFiltered') }}</p>
         </div>
       </template>
     </el-table>
@@ -377,6 +379,20 @@ onMounted(() => {
   &__pagination {
     justify-content: flex-end;
     margin-top: 16px;
+  }
+}
+
+.finance-empty-state {
+  text-align: center;
+  h3 {
+    margin: 8px 0 4px;
+    font-size: 16px;
+    font-weight: 600;
+    color: var(--el-text-color-primary);
+  }
+  p {
+    margin: 0 0 12px;
+    color: var(--el-text-color-regular);
   }
 }
 </style>

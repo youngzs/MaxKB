@@ -30,6 +30,11 @@ export default {
     deleteSuccess: '删除成功',
     empty: '暂无项目，点击右上角『新建项目』开始',
     emptyFiltered: '没有符合条件的项目',
+    emptyState: {
+      title: '创建您的第一个融资项目',
+      subtitle: '在一个项目下统一管理材料、文档和进度，工作台会自动跟踪全流程。',
+      cta: '创建第一个项目',
+    },
     searchPlaceholder: '搜索项目名称',
     detailPlaceholder: '项目详情（Gate 3 完善）',
     backToList: '返回项目列表',
@@ -107,6 +112,11 @@ export default {
     newTemplate: '上传新模板',
     empty: '暂无模板，点击右上角『上传模板』开始',
     emptyFiltered: '没有符合条件的模板',
+    emptyState: {
+      title: '建立模板库',
+      subtitle: '上传 .docx 模板后，工作台可自动填充占位符，快速生成报告、上会材料等常见文档。',
+      cta: '上传第一个模板',
+    },
     backToList: '返回模板库',
     deleteConfirm: '确定删除模板「{name}」吗？已生成的文档不会受影响。',
     deleteSuccess: '删除成功',
@@ -175,6 +185,11 @@ export default {
     newGeneration: '新建生成',
     empty: '暂无生成记录',
     emptyFiltered: '没有符合条件的记录',
+    emptyState: {
+      title: '生成您的第一份流程文档',
+      subtitle: '选择模板、填入占位符，工作台会在数秒内输出可下载、可审核的 .docx 文档。',
+      cta: '新建一次生成',
+    },
     columns: {
       project: '项目',
       template: '模板',
@@ -247,6 +262,11 @@ export default {
     newTask: '新建任务',
     empty: '暂无任务，点击右上角『新建任务』开始',
     emptyFiltered: '没有符合条件的任务',
+    emptyState: {
+      title: '整理您的第一份材料包',
+      subtitle: '粘贴或上传需求清单，工作台会从知识库自动匹配文档，整理成可审核、可发送的材料包。',
+      cta: '创建第一个任务',
+    },
     deleteConfirm: '确定删除任务「{title}」吗？',
     deleteSuccess: '删除成功',
     list: {
@@ -336,6 +356,7 @@ export default {
       downloadFallbackName: '材料包.zip',
       parsingMessage: 'AI 正在解析需求清单...',
       matchingMessage: '正在匹配知识库...',
+      progressHint: '通常需 10-30 秒，您可以离开此页面，完成后状态会自动更新',
       failedTitle: '任务执行失败',
       retry: '重试',
       selectionUpdateSuccess: '选择已更新',
@@ -362,6 +383,10 @@ export default {
     exportCsv: '导出 CSV',
     empty: '暂无审计记录',
     emptyFiltered: '没有符合条件的审计记录',
+    emptyState: {
+      title: '暂无审计记录',
+      subtitle: '随着用户在项目、材料、模板和 SMTP 中操作，相关记录会自动出现在这里。',
+    },
     filters: {
       targetType: '对象类型',
       action: '操作',
@@ -417,6 +442,11 @@ export default {
     empty: '暂无 SMTP 配置，点击右上角添加',
     testSuccess: '测试邮件已发送',
     testFailed: '测试发送失败',
+    emptyState: {
+      title: '配置您的第一个 SMTP 账号',
+      subtitle: '配置发件邮箱后，工作台即可代您发送材料包和通知邮件。',
+      cta: '配置第一个 SMTP',
+    },
     actions: {
       add: '新建 SMTP 配置',
       edit: '编辑',
@@ -467,6 +497,11 @@ export default {
     title: '邮件模板',
     hint: '可在发送对话框中选用模板。',
     empty: '暂无邮件模板，点击右上角添加',
+    emptyState: {
+      title: '新建您的第一个邮件模板',
+      subtitle: '复用主题与正文，多收件人也能保持一致。支持 Markdown，发送时会转换为 HTML。',
+      cta: '新建第一个模板',
+    },
     actions: {
       add: '新建模板',
       edit: '编辑',
@@ -494,6 +529,7 @@ export default {
       bodyText: '正文（纯文本）',
       bodyHtml: 'HTML 正文（可选）',
       bodyHtmlPlaceholder: '可留空，留空则发送纯文本邮件',
+      markdownHint: '支持 Markdown：**粗体**、*斜体*、列表、链接 — 发送时会转为 HTML。',
       isActive: '启用',
       placeholderHint:
         '可用变量：{project_name}、{task_title}、{recipient_name}、{zip_filename}',
@@ -561,6 +597,29 @@ export default {
         failed: '失败',
         retried: '已重发',
       },
+    },
+  },
+  workflowRun: {
+    title: '运行日志',
+    openLogLink: '查看运行日志',
+    refresh: '刷新',
+    autoRefresh: '自动刷新',
+    totalCount: '共 {n} 条运行记录',
+    empty: '暂无运行记录',
+    columns: {
+      task: '任务',
+      status: '状态',
+      startedAt: '开始时间',
+      duration: '耗时',
+      retries: '重试',
+      error: '错误信息',
+    },
+    status: {
+      queued: '排队中',
+      running: '运行中',
+      succeeded: '成功',
+      failed: '失败',
+      retrying: '重试中',
     },
   },
 }

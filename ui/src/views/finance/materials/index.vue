@@ -155,21 +155,23 @@
       </el-table-column>
 
       <template #empty>
-        <div class="finance-materials__empty">
-          <p>
-            {{
-              isFiltered
-                ? $t('views.finance.materials.emptyFiltered')
-                : $t('views.finance.materials.empty')
-            }}
-          </p>
-          <el-button
-            v-if="canEdit && !isFiltered"
-            type="primary"
-            @click="openCreate"
-          >
-            {{ $t('views.finance.materials.newTask') }}
-          </el-button>
+        <el-empty
+          v-if="!isFiltered"
+          :image-size="100"
+          class="finance-materials__empty"
+        >
+          <template #description>
+            <div class="finance-empty-state">
+              <h3>{{ $t('views.finance.materials.emptyState.title') }}</h3>
+              <p class="text-secondary">{{ $t('views.finance.materials.emptyState.subtitle') }}</p>
+              <el-button v-if="canEdit" type="primary" @click="openCreate">
+                {{ $t('views.finance.materials.emptyState.cta') }}
+              </el-button>
+            </div>
+          </template>
+        </el-empty>
+        <div v-else class="finance-materials__empty">
+          <p>{{ $t('views.finance.materials.emptyFiltered') }}</p>
         </div>
       </template>
     </el-table>
@@ -435,6 +437,20 @@ onBeforeUnmount(() => {
   &__pagination {
     justify-content: flex-end;
     margin-top: 16px;
+  }
+}
+
+.finance-empty-state {
+  text-align: center;
+  h3 {
+    margin: 8px 0 4px;
+    font-size: 16px;
+    font-weight: 600;
+    color: var(--el-text-color-primary);
+  }
+  p {
+    margin: 0 0 12px;
+    color: var(--el-text-color-regular);
   }
 }
 </style>

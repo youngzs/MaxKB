@@ -90,17 +90,23 @@
         </el-card>
       </div>
 
+      <el-empty
+        v-else-if="!store.loading && !scenarioFilter"
+        :image-size="120"
+        class="finance-template__empty"
+      >
+        <template #description>
+          <div class="finance-empty-state">
+            <h3>{{ $t('views.finance.templateLib.emptyState.title') }}</h3>
+            <p class="text-secondary">{{ $t('views.finance.templateLib.emptyState.subtitle') }}</p>
+            <el-button v-if="canEdit" type="primary" @click="openUpload">
+              {{ $t('views.finance.templateLib.emptyState.cta') }}
+            </el-button>
+          </div>
+        </template>
+      </el-empty>
       <div v-else-if="!store.loading" class="finance-template__empty">
-        <p>
-          {{
-            scenarioFilter
-              ? $t('views.finance.templateLib.emptyFiltered')
-              : $t('views.finance.templateLib.empty')
-          }}
-        </p>
-        <el-button v-if="canEdit && !scenarioFilter" type="primary" @click="openUpload">
-          {{ $t('views.finance.templateLib.upload') }}
-        </el-button>
+        <p>{{ $t('views.finance.templateLib.emptyFiltered') }}</p>
       </div>
     </div>
 
@@ -333,6 +339,20 @@ onMounted(() => {
   &__pagination {
     justify-content: flex-end;
     margin-top: 16px;
+  }
+}
+
+.finance-empty-state {
+  text-align: center;
+  h3 {
+    margin: 8px 0 4px;
+    font-size: 16px;
+    font-weight: 600;
+    color: var(--el-text-color-primary);
+  }
+  p {
+    margin: 0 0 12px;
+    color: var(--el-text-color-regular);
   }
 }
 </style>

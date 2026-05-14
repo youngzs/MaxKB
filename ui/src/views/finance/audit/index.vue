@@ -115,7 +115,7 @@
                 <span class="finance-audit__expand-value">{{ row.target_id || '-' }}</span>
               </div>
             </div>
-            <pre class="finance-audit__payload">{{ formatPayload(row.payload) }}</pre>
+            <JsonPayload :value="row.payload" max-height="320px" class="finance-audit__payload" />
             <div class="finance-audit__expand-actions">
               <el-button size="small" @click="openPayloadDialog(row)">
                 {{ $t('views.finance.auditPage.actions.viewPayload') }}
@@ -196,8 +196,20 @@
       </el-table-column>
 
       <template #empty>
-        <div class="finance-audit__empty">
-          <p>{{ isFiltered ? $t('views.finance.auditPage.emptyFiltered') : $t('views.finance.auditPage.empty') }}</p>
+        <el-empty
+          v-if="!isFiltered"
+          :image-size="100"
+          class="finance-audit__empty"
+        >
+          <template #description>
+            <div class="finance-empty-state">
+              <h3>{{ $t('views.finance.auditPage.emptyState.title') }}</h3>
+              <p class="text-secondary">{{ $t('views.finance.auditPage.emptyState.subtitle') }}</p>
+            </div>
+          </template>
+        </el-empty>
+        <div v-else class="finance-audit__empty">
+          <p>{{ $t('views.finance.auditPage.emptyFiltered') }}</p>
         </div>
       </template>
     </el-table>
@@ -253,9 +265,12 @@
           <span class="finance-audit__mono">{{ payloadDialogRow.target_id }}</span>
         </div>
       </div>
-      <pre class="finance-audit__payload finance-audit__payload--dialog">{{
-        payloadDialogRow ? formatPayload(payloadDialogRow.payload) : ''
-      }}</pre>
+      <JsonPayload
+        v-if="payloadDialogRow"
+        :value="payloadDialogRow.payload"
+        max-height="480px"
+        class="finance-audit__payload--dialog"
+      />
     </el-dialog>
   </div>
 </template>
@@ -275,6 +290,7 @@ import type {
   AuditTargetType,
 } from '@/api/finance/type'
 import type { FinanceAuditFilters } from '@/stores/modules/finance-audit'
+import JsonPayload from '../components/JsonPayload.vue'
 
 const router = useRouter()
 const { user, financeAudit: store } = useStore()
@@ -382,17 +398,6 @@ const shortId = (id: string | null | undefined): string => {
   // UUIDs are 36 chars with dashes. Show the leading 8 (first group) so
   // operators can correlate without bleeding the full identifier.
   return id.length > 12 ? `${id.slice(0, 8)}…` : id
-}
-
-const formatPayload = (payload: Record<string, unknown> | null | undefined): string => {
-  if (!payload || typeof payload !== 'object') {
-    return JSON.stringify(payload ?? {}, null, 2)
-  }
-  try {
-    return JSON.stringify(payload, null, 2)
-  } catch {
-    return String(payload)
-  }
 }
 
 const fetchList = () => {
@@ -553,23 +558,10 @@ onMounted(() => {
     margin-top: 8px;
   }
 
-  &__payload {
-    background: var(--el-fill-color-darker, #f4f4f5);
-    border-radius: 4px;
-    padding: 8px 12px;
-    margin: 0;
-    font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
-    font-size: 12px;
-    line-height: 1.55;
-    color: var(--el-text-color-primary);
-    max-height: 320px;
-    overflow: auto;
-    white-space: pre;
-
-    &--dialog {
-      max-height: 480px;
-      margin-top: 16px;
-    }
+  /* Payload styling now lives in JsonPayload.vue. We just gap the dialog
+     instance from the meta grid above it. */
+  &__payload--dialog {
+    margin-top: 16px;
   }
 
   &__dialog-meta {
@@ -589,6 +581,20 @@ onMounted(() => {
     text-align: center;
     color: var(--el-text-color-secondary);
     padding: 24px 0;
+  }
+}
+
+.finance-empty-state {
+  text-align: center;
+  h3 {
+    margin: 8px 0 4px;
+    font-size: 16px;
+    font-weight: 600;
+    color: var(--el-text-color-primary);
+  }
+  p {
+    margin: 0 0 12px;
+    color: var(--el-text-color-regular);
   }
 }
 </style>

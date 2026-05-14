@@ -47,6 +47,12 @@ export default {
     deleteSuccess: 'Deleted successfully',
     empty: 'No projects yet. Click "New Project" in the top-right to get started.',
     emptyFiltered: 'No projects match your filters.',
+    emptyState: {
+      title: 'Start your first finance project',
+      subtitle:
+        'Group materials, documents, and progress under one project so the workspace can track everything end-to-end.',
+      cta: 'Create your first project',
+    },
     searchPlaceholder: 'Search by project name',
     detailPlaceholder: 'Project detail (refined in Gate 3)',
     backToList: 'Back to project list',
@@ -124,6 +130,12 @@ export default {
     newTemplate: 'Upload New Template',
     empty: 'No templates yet. Click "Upload Template" in the top-right to get started.',
     emptyFiltered: 'No templates match your filters.',
+    emptyState: {
+      title: 'Build your template library',
+      subtitle:
+        'Upload .docx templates so the workspace can auto-fill placeholders for reports, committee briefs, and other recurring documents.',
+      cta: 'Upload your first template',
+    },
     backToList: 'Back to template library',
     deleteConfirm:
       'Are you sure you want to delete template "{name}"? Previously generated documents are unaffected.',
@@ -194,6 +206,12 @@ export default {
     newGeneration: 'New Generation',
     empty: 'No generation records yet.',
     emptyFiltered: 'No records match your filters.',
+    emptyState: {
+      title: 'Generate your first process document',
+      subtitle:
+        'Pick a template, fill placeholders, and the workspace will produce a polished .docx in seconds — ready for review and download.',
+      cta: 'Start a new generation',
+    },
     columns: {
       project: 'Project',
       template: 'Template',
@@ -266,6 +284,12 @@ export default {
     newTask: 'New Task',
     empty: 'No tasks yet. Click "New Task" in the top-right to get started.',
     emptyFiltered: 'No tasks match your filters.',
+    emptyState: {
+      title: 'Package your first set of materials',
+      subtitle:
+        'Paste or upload a requirement list and the workspace will match the right documents from your knowledge base — ready to review and send.',
+      cta: 'Create your first task',
+    },
     deleteConfirm: 'Delete task "{title}"?',
     deleteSuccess: 'Deleted successfully',
     list: {
@@ -358,6 +382,7 @@ export default {
       downloadFallbackName: 'materials-package.zip',
       parsingMessage: 'AI is parsing the requirement list...',
       matchingMessage: 'Matching against the knowledge base...',
+      progressHint: 'Usually takes 10-30 seconds. You can leave this page; status will refresh automatically.',
       failedTitle: 'Task failed',
       retry: 'Retry',
       selectionUpdateSuccess: 'Selection saved',
@@ -384,6 +409,11 @@ export default {
     exportCsv: 'Export CSV',
     empty: 'No audit records yet',
     emptyFiltered: 'No audit records match the current filters',
+    emptyState: {
+      title: 'No audit records yet',
+      subtitle:
+        'As users act on projects, materials, templates, and SMTP configs, the audit trail will populate here automatically.',
+    },
     filters: {
       targetType: 'Target type',
       action: 'Action',
@@ -439,6 +469,12 @@ export default {
     empty: 'No SMTP configs yet. Use the button above to add one.',
     testSuccess: 'Test email sent',
     testFailed: 'Test send failed',
+    emptyState: {
+      title: 'Configure your first SMTP account',
+      subtitle:
+        'Add an outbound email account so the workspace can send materials packages and notifications on your behalf.',
+      cta: 'Configure your first SMTP',
+    },
     actions: {
       add: 'New SMTP config',
       edit: 'Edit',
@@ -489,6 +525,12 @@ export default {
     title: 'Email templates',
     hint: 'Reusable subject / body templates for outbound emails.',
     empty: 'No templates yet. Use the button above to add one.',
+    emptyState: {
+      title: 'Create your first email template',
+      subtitle:
+        'Re-use a polished subject and body across recipients. Markdown is fully supported and rendered to HTML on send.',
+      cta: 'Create your first template',
+    },
     actions: {
       add: 'New template',
       edit: 'Edit',
@@ -516,6 +558,8 @@ export default {
       bodyText: 'Plain-text body',
       bodyHtml: 'HTML body (optional)',
       bodyHtmlPlaceholder: 'Leave blank to send plain text only',
+      markdownHint:
+        'Markdown supported: **bold**, *italic*, lists, links — rendered to HTML on send.',
       isActive: 'Active',
       placeholderHint:
         'Available variables: {project_name}, {task_title}, {recipient_name}, {zip_filename}',
@@ -583,6 +627,29 @@ export default {
         failed: 'Failed',
         retried: 'Retried',
       },
+    },
+  },
+  workflowRun: {
+    title: 'Run log',
+    openLogLink: 'View run log',
+    refresh: 'Refresh',
+    autoRefresh: 'Auto-refresh',
+    totalCount: '{n} run(s)',
+    empty: 'No runs yet',
+    columns: {
+      task: 'Task',
+      status: 'Status',
+      startedAt: 'Started',
+      duration: 'Duration',
+      retries: 'Retries',
+      error: 'Error',
+    },
+    status: {
+      queued: 'Queued',
+      running: 'Running',
+      succeeded: 'Succeeded',
+      failed: 'Failed',
+      retrying: 'Retrying',
     },
   },
 }

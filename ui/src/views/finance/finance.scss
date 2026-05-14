@@ -1,0 +1,129 @@
+/**
+ * Finance workspace shared mobile responsive overrides.
+ *
+ * Imported once globally via `src/styles/index.scss`. All rules live inside
+ * `@media (max-width: 640px)` so desktop layouts stay byte-for-byte the same;
+ * only narrow viewports pick up the overrides. The breakpoint matches the
+ * `useIsMobile.ts` default (640 px) — keep both in lock-step.
+ *
+ * Class names here are unscoped because the finance page component styles
+ * are `<style scoped>`, but the *element* class names ('.finance-project',
+ * etc.) still appear in the rendered DOM — Vue only adds a data-attribute,
+ * it doesn't rewrite class names. So a plain selector here matches them.
+ *
+ * Use `!important` sparingly but deliberately — Element Plus inline styles
+ * (`style="width: 240px"`) lose against `!important` width overrides, which
+ * is what we want.
+ */
+
+@media (max-width: 640px) {
+  .finance-project,
+  .finance-template,
+  .finance-documents,
+  .finance-materials,
+  .finance-audit,
+  .finance-smtp,
+  .finance-email-template,
+  .finance-overview {
+    /* Outer page wrapper — most finance pages use `.p-24` for 24 px padding.
+       On mobile that's too much and eats half the screen, so dial it back. */
+    &.p-24 {
+      padding: 12px !important;
+    }
+
+    /* Stack the page header (title + primary action) instead of side-by-side. */
+    .flex-between {
+      flex-direction: column;
+      align-items: stretch !important;
+      gap: 8px;
+    }
+  }
+
+  /* Filter rows: stack each control on its own line and stretch to fill. */
+  .finance-project__filters,
+  .finance-template__filters,
+  .finance-documents__filters,
+  .finance-materials__filters,
+  .finance-audit__filters {
+    flex-direction: column;
+    align-items: stretch !important;
+
+    .el-select,
+    .el-input,
+    .el-date-editor,
+    .el-input-number {
+      width: 100% !important;
+      margin-left: 0 !important;
+      margin-top: 6px;
+    }
+
+    .el-form--inline .el-form-item {
+      display: flex;
+      margin-right: 0;
+      margin-bottom: 6px;
+    }
+
+    .el-radio-group {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 4px;
+    }
+  }
+
+  /* Card grids (template/overview) collapse to a single column. */
+  .finance-template__grid,
+  .finance-overview__grid {
+    grid-template-columns: 1fr !important;
+  }
+
+  /* Tables scroll horizontally rather than blowing out the layout. */
+  .finance-project__table,
+  .finance-documents__table,
+  .finance-materials__table,
+  .finance-audit__table {
+    .el-table {
+      overflow-x: auto;
+    }
+  }
+
+  /* Pagination loses sizes/jumper on mobile — keep only essential controls. */
+  .finance-project__pagination,
+  .finance-template__pagination,
+  .finance-documents__pagination,
+  .finance-materials__pagination,
+  .finance-audit__pagination {
+    .el-pagination {
+      flex-wrap: wrap;
+      justify-content: center;
+    }
+    .el-pagination__sizes,
+    .el-pagination__jump {
+      display: none;
+    }
+  }
+
+  /* Audit page payload-dialog meta grid → single column on mobile. */
+  .finance-audit__dialog-meta {
+    grid-template-columns: 1fr !important;
+  }
+
+  /* Empty-state CTAs need breathing room on mobile. */
+  .finance-empty-state {
+    h3 {
+      font-size: 16px;
+      margin: 8px 0 4px;
+    }
+    p {
+      font-size: 13px;
+      margin: 0 0 12px;
+    }
+  }
+
+  /* Pop-over edit dialogs are full-screen when isMobile (via `:fullscreen` on
+     el-dialog). This CSS makes the body content scroll inside the dialog
+     rather than overflowing horizontally. */
+  .el-dialog.is-fullscreen .el-dialog__body {
+    overflow-x: hidden;
+    word-break: break-word;
+  }
+}

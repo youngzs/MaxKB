@@ -30,6 +30,11 @@ export default {
     deleteSuccess: '刪除成功',
     empty: '尚無項目，點擊右上角『新建項目』開始',
     emptyFiltered: '沒有符合條件的項目',
+    emptyState: {
+      title: '建立您的第一個融資項目',
+      subtitle: '在同一個項目下統一管理材料、文件與進度，工作台會自動追蹤全流程。',
+      cta: '建立第一個項目',
+    },
     searchPlaceholder: '搜尋項目名稱',
     detailPlaceholder: '項目詳情（Gate 3 完善）',
     backToList: '返回項目列表',
@@ -106,6 +111,11 @@ export default {
     upload: '上傳範本',
     newTemplate: '上傳新範本',
     empty: '尚無範本，點擊右上角『上傳範本』開始',
+    emptyState: {
+      title: '建立範本庫',
+      subtitle: '上傳 .docx 範本後，工作台可自動填寫佔位符，快速產出報告與會議材料。',
+      cta: '上傳第一個範本',
+    },
     emptyFiltered: '沒有符合條件的範本',
     backToList: '返回範本庫',
     deleteConfirm: '確定刪除範本「{name}」嗎？已生成的文件不會受影響。',
@@ -175,6 +185,11 @@ export default {
     newGeneration: '新建生成',
     empty: '尚無生成記錄',
     emptyFiltered: '沒有符合條件的記錄',
+    emptyState: {
+      title: '產出您的第一份流程文件',
+      subtitle: '選擇範本、填入佔位符，工作台會在數秒內輸出可下載、可審核的 .docx 檔案。',
+      cta: '新增一次生成',
+    },
     columns: {
       project: '項目',
       template: '範本',
@@ -247,6 +262,11 @@ export default {
     newTask: '新建任務',
     empty: '暫無任務，點擊右上角『新建任務』開始',
     emptyFiltered: '沒有符合條件的任務',
+    emptyState: {
+      title: '整理您的第一份材料包',
+      subtitle: '貼上或上傳需求清單，工作台會從知識庫自動比對文件，整理成可審核、可寄送的材料包。',
+      cta: '建立第一個任務',
+    },
     deleteConfirm: '確定刪除任務「{title}」嗎？',
     deleteSuccess: '刪除成功',
     list: {
@@ -336,6 +356,7 @@ export default {
       downloadFallbackName: '材料包.zip',
       parsingMessage: 'AI 正在解析需求清單...',
       matchingMessage: '正在匹配知識庫...',
+      progressHint: '通常需 10-30 秒，您可以離開此頁面，完成後狀態會自動更新',
       failedTitle: '任務執行失敗',
       retry: '重試',
       selectionUpdateSuccess: '選擇已更新',
@@ -362,6 +383,10 @@ export default {
     exportCsv: '匯出 CSV',
     empty: '暫無稽核記錄',
     emptyFiltered: '沒有符合條件的稽核記錄',
+    emptyState: {
+      title: '暫無稽核記錄',
+      subtitle: '隨著使用者操作項目、材料、範本與 SMTP，相關記錄會自動顯示於此。',
+    },
     filters: {
       targetType: '對象類型',
       action: '操作',
@@ -417,6 +442,11 @@ export default {
     empty: '尚無 SMTP 設定，點擊右上角新增',
     testSuccess: '測試郵件已寄出',
     testFailed: '測試寄送失敗',
+    emptyState: {
+      title: '設定您的第一個 SMTP 帳號',
+      subtitle: '設定寄件信箱後，工作台即可代您寄送材料包與通知郵件。',
+      cta: '設定第一個 SMTP',
+    },
     actions: {
       add: '新增 SMTP 設定',
       edit: '編輯',
@@ -467,6 +497,11 @@ export default {
     title: '郵件範本',
     hint: '可在寄送對話框中選用範本。',
     empty: '尚無郵件範本，點擊右上角新增',
+    emptyState: {
+      title: '建立您的第一個郵件範本',
+      subtitle: '重複利用主旨與正文，多收件人也能保持一致。支援 Markdown，寄送時會轉換為 HTML。',
+      cta: '新增第一個範本',
+    },
     actions: {
       add: '新增範本',
       edit: '編輯',
@@ -494,6 +529,7 @@ export default {
       bodyText: '正文（純文字）',
       bodyHtml: 'HTML 正文（可選）',
       bodyHtmlPlaceholder: '可留空，留空則寄送純文字郵件',
+      markdownHint: '支援 Markdown：**粗體**、*斜體*、列表、連結 — 寄送時會轉換為 HTML。',
       isActive: '啟用',
       placeholderHint:
         '可用變數：{project_name}、{task_title}、{recipient_name}、{zip_filename}',
@@ -561,6 +597,29 @@ export default {
         failed: '失敗',
         retried: '已重寄',
       },
+    },
+  },
+  workflowRun: {
+    title: '執行日誌',
+    openLogLink: '檢視執行日誌',
+    refresh: '重新整理',
+    autoRefresh: '自動重新整理',
+    totalCount: '共 {n} 筆執行紀錄',
+    empty: '尚無執行紀錄',
+    columns: {
+      task: '任務',
+      status: '狀態',
+      startedAt: '開始時間',
+      duration: '耗時',
+      retries: '重試',
+      error: '錯誤訊息',
+    },
+    status: {
+      queued: '排隊中',
+      running: '執行中',
+      succeeded: '成功',
+      failed: '失敗',
+      retrying: '重試中',
     },
   },
 }
