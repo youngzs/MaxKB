@@ -15,6 +15,15 @@ from .document_template import (
     DocumentTemplateUpdateSerializer,
     DocumentTemplateUploadSerializer,
 )
+from .email_send_log import (
+    EmailSendLogOutputSerializer,
+    MaterialsTaskSendSerializer,
+)
+from .email_template import (
+    EmailTemplateCreateSerializer,
+    EmailTemplateOutputSerializer,
+    EmailTemplateUpdateSerializer,
+)
 from .materials_task import (
     MaterialsTaskCreateSerializer,
     MaterialsTaskOutputSerializer,
@@ -23,6 +32,12 @@ from .materials_task import (
     MaterialsTaskUpdateSelectionSerializer,
 )
 from .project import FinanceProjectInputSerializer, FinanceProjectOutputSerializer
+from .smtp_config import (
+    SmtpConfigCreateSerializer,
+    SmtpConfigOutputSerializer,
+    SmtpConfigTestSerializer,
+    SmtpConfigUpdateSerializer,
+)
 
 __all__ = [
     'FinanceProjectInputSerializer',
@@ -39,4 +54,13 @@ __all__ = [
     'MaterialsTaskPackSerializer',
     'MaterialsTaskReviewSerializer',
     'MaterialsTaskUpdateSelectionSerializer',
+    'SmtpConfigCreateSerializer',
+    'SmtpConfigUpdateSerializer',
+    'SmtpConfigTestSerializer',
+    'SmtpConfigOutputSerializer',
+    'EmailTemplateCreateSerializer',
+    'EmailTemplateUpdateSerializer',
+    'EmailTemplateOutputSerializer',
+    'MaterialsTaskSendSerializer',
+    'EmailSendLogOutputSerializer',
 ]

@@ -294,3 +294,138 @@ export interface AuditLogListParams {
   page?: number
   size?: number
 }
+
+/* ──────────────────────────────────────────────────────────────────────────
+ *  SMTP / Email / Send (Gate 5 Track B)
+ *  Mounts under /admin/api/finance/workspace/<workspace_id>
+ * ─────────────────────────────────────────────────────────────────────── */
+
+export interface SmtpConfig {
+  id: string
+  workspace_id: string
+  name: string
+  host: string
+  port: number
+  username: string
+  from_email: string
+  from_name: string
+  use_tls: boolean
+  use_ssl: boolean
+  is_default: boolean
+  /** True iff a password is currently stored. Plaintext NEVER returned. */
+  has_password: boolean
+  created_by: string
+  created_at: string
+  updated_at: string
+}
+
+export interface SmtpConfigCreate {
+  name: string
+  host: string
+  port: number
+  username: string
+  password: string
+  from_email: string
+  from_name?: string
+  use_tls?: boolean
+  use_ssl?: boolean
+  is_default?: boolean
+}
+
+export interface SmtpConfigUpdate {
+  name?: string
+  host?: string
+  port?: number
+  username?: string
+  /** Blank/omitted → keep existing password. */
+  password?: string
+  from_email?: string
+  from_name?: string
+  use_tls?: boolean
+  use_ssl?: boolean
+  is_default?: boolean
+}
+
+export interface SmtpTestRequest {
+  to_address: string
+}
+
+export interface SmtpTestResponse {
+  success: boolean
+  error: string | null
+}
+
+export type EmailTemplateScenario =
+  | 'materials'
+  | 'progress_report'
+  | 'general'
+  | 'other'
+
+export interface EmailTemplate {
+  id: string
+  workspace_id: string
+  name: string
+  subject: string
+  body_text: string
+  body_html: string
+  scenario: EmailTemplateScenario
+  is_active: boolean
+  created_by: string
+  created_at: string
+  updated_at: string
+}
+
+export interface EmailTemplateCreate {
+  name: string
+  subject: string
+  body_text: string
+  body_html?: string
+  scenario?: EmailTemplateScenario
+  is_active?: boolean
+}
+
+export type EmailTemplateUpdate = Partial<EmailTemplateCreate>
+
+export type EmailSendStatus =
+  | 'queued'
+  | 'sending'
+  | 'sent'
+  | 'failed'
+  | 'retried'
+
+export interface EmailSendLog {
+  id: string
+  workspace_id: string
+  target_type: string
+  target_id: string | null
+  smtp_config_id: string | null
+  email_template_id: string | null
+  to_addresses: string[]
+  cc_addresses: string[]
+  subject: string
+  body_preview: string
+  attachment_keys: string[]
+  status: EmailSendStatus
+  error_message: string
+  retry_count: number
+  sent_by: string
+  sent_at: string | null
+  created_at: string
+}
+
+export interface MaterialsTaskSendBody {
+  smtp_config_id: string
+  email_template_id: string
+  to_addresses: string[]
+  cc_addresses?: string[]
+  extra_context?: Record<string, string>
+  attach_zip?: boolean
+}
+
+export interface EmailSendLogListParams {
+  target_type?: string
+  target_id?: string
+  status?: EmailSendStatus | ''
+  page?: number
+  size?: number
+}

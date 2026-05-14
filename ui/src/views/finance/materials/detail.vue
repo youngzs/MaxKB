@@ -83,6 +83,13 @@
         >
           {{ $t('views.finance.materials.detail.actions.download') }}
         </el-button>
+        <el-button
+          v-if="canSend && task.status === 'approved'"
+          type="primary"
+          @click="sendDialogVisible = true"
+        >
+          {{ $t('views.finance.send.actions.send') }}
+        </el-button>
       </div>
     </div>
 
@@ -380,6 +387,78 @@
         {{ $t('views.finance.materials.detail.manualPicker.empty') }}
       </div>
     </el-drawer>
+
+    <!-- Email send log panel (Gate 5 Track B) -->
+    <div v-if="task" class="finance-materials-detail__sendlog">
+      <el-collapse v-model="sendLogPanel">
+        <el-collapse-item
+          :title="$t('views.finance.send.log.title')"
+          name="sendlog"
+        >
+          <el-table
+            :data="sendLogs"
+            empty-text=" "
+            v-loading="sendLogLoading"
+            size="small"
+            style="width: 100%"
+          >
+            <el-table-column
+              :label="$t('views.finance.send.log.columns.createdAt')"
+              prop="created_at"
+              min-width="160"
+            />
+            <el-table-column
+              :label="$t('views.finance.send.log.columns.to')"
+              min-width="220"
+            >
+              <template #default="{ row }">
+                <span>{{ (row.to_addresses || []).join(', ') }}</span>
+              </template>
+            </el-table-column>
+            <el-table-column
+              :label="$t('views.finance.send.log.columns.subject')"
+              prop="subject"
+              min-width="220"
+              show-overflow-tooltip
+            />
+            <el-table-column
+              :label="$t('views.finance.send.log.columns.status')"
+              width="120"
+            >
+              <template #default="{ row }">
+                <el-tag
+                  size="small"
+                  :type="sendStatusType(row.status)"
+                >
+                  {{ $t(`views.finance.send.log.status.${row.status}`) }}
+                </el-tag>
+              </template>
+            </el-table-column>
+            <el-table-column
+              :label="$t('views.finance.send.log.columns.error')"
+              min-width="220"
+              show-overflow-tooltip
+            >
+              <template #default="{ row }">
+                <span>{{ row.error_message || '-' }}</span>
+              </template>
+            </el-table-column>
+          </el-table>
+          <p v-if="sendLogs.length === 0 && !sendLogLoading"
+            class="finance-materials-detail__sendlog-empty">
+            {{ $t('views.finance.send.log.empty') }}
+          </p>
+        </el-collapse-item>
+      </el-collapse>
+    </div>
+
+    <!-- Send dialog (Gate 5 Track B) -->
+    <SendMaterialsDialog
+      v-model:visible="sendDialogVisible"
+      :task="task"
+      :project-name="projectName"
+      @sent="onSent"
+    />
   </div>
 </template>
 
@@ -393,13 +472,17 @@ import useStore from '@/stores'
 import { hasPermission } from '@/utils/permission'
 import { PermissionConst, RoleConst } from '@/utils/permission/data'
 import { downloadZip } from '@/api/finance/materials-task'
+import { listEmailSendLogs } from '@/api/finance/email-send'
 import type {
+  EmailSendLog,
+  EmailSendStatus,
   MatchedDocument,
   MaterialsTask,
   MaterialsTaskStatus,
   SensitivityLevel,
 } from '@/api/finance/type'
 import SensitivityBadge from '@/components/sensitivity-badge/index.vue'
+import SendMaterialsDialog from './components/SendMaterialsDialog.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -456,6 +539,65 @@ const canReview = computed(() =>
     'OR',
   ),
 )
+
+const canSend = computed(() =>
+  hasPermission(
+    [
+      RoleConst.ADMIN,
+      RoleConst.WORKSPACE_MANAGE.getWorkspaceRole,
+      PermissionConst.FINANCE_SEND.getWorkspacePermission,
+      PermissionConst.FINANCE_SEND.getWorkspacePermissionWorkspaceManageRole,
+    ],
+    'OR',
+  ),
+)
+
+// ---- Send dialog + send log (Gate 5 Track B) ----
+const sendDialogVisible = ref(false)
+const sendLogPanel = ref<string[]>([])
+const sendLogLoading = ref(false)
+const sendLogs = ref<EmailSendLog[]>([])
+
+const sendStatusType = (
+  s: EmailSendStatus,
+): 'info' | 'primary' | 'success' | 'warning' | 'danger' => {
+  switch (s) {
+    case 'sent':
+      return 'success'
+    case 'sending':
+    case 'queued':
+      return 'warning'
+    case 'failed':
+      return 'danger'
+    case 'retried':
+      return 'primary'
+    default:
+      return 'info'
+  }
+}
+
+const fetchSendLogs = async () => {
+  const wid = user.getWorkspaceId()
+  if (!wid || !task.value) return
+  sendLogLoading.value = true
+  try {
+    const res = await listEmailSendLogs(wid, {
+      target_type: 'MATERIALS_TASK',
+      target_id: task.value.id,
+      size: 50,
+    })
+    sendLogs.value = (res.data?.records as EmailSendLog[]) || []
+  } finally {
+    sendLogLoading.value = false
+  }
+}
+
+const onSent = async () => {
+  // After a successful send, refresh both the task (status flips to 'sent')
+  // and the send-log table.
+  await fetchTask()
+  await fetchSendLogs()
+}
 
 /** Levels >= confidential are treated as locked for the current user.
  *  TODO: replace this with the real per-user clearance once the backend
@@ -717,6 +859,8 @@ onMounted(async () => {
     projectStore.fetchList(wid).catch(() => undefined)
   }
   await fetchTask()
+  // Send logs are workspace+task scoped — fetch them once the task is loaded.
+  fetchSendLogs().catch(() => undefined)
 })
 
 onBeforeUnmount(() => {

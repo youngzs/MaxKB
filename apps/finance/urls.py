@@ -116,6 +116,42 @@ urlpatterns = [
         views.MaterialsTaskZipDownloadView.as_view(),
         name='materials_task_zip',
     ),
+    # ---- Gate 5 Track B: SMTP send closure ----
+    path(
+        'workspace/<str:workspace_id>/smtp-config',
+        views.SmtpConfigListView.as_view(),
+        name='smtp_config_list',
+    ),
+    path(
+        'workspace/<str:workspace_id>/smtp-config/<uuid:pk>',
+        views.SmtpConfigDetailView.as_view(),
+        name='smtp_config_detail',
+    ),
+    path(
+        'workspace/<str:workspace_id>/smtp-config/<uuid:pk>/test',
+        views.SmtpConfigTestView.as_view(),
+        name='smtp_config_test',
+    ),
+    path(
+        'workspace/<str:workspace_id>/email-template',
+        views.EmailTemplateListView.as_view(),
+        name='email_template_list',
+    ),
+    path(
+        'workspace/<str:workspace_id>/email-template/<uuid:pk>',
+        views.EmailTemplateDetailView.as_view(),
+        name='email_template_detail',
+    ),
+    path(
+        'workspace/<str:workspace_id>/materials-task/<uuid:pk>/send',
+        views.MaterialsTaskSendView.as_view(),
+        name='materials_task_send',
+    ),
+    path(
+        'workspace/<str:workspace_id>/email-send-log',
+        views.EmailSendLogListView.as_view(),
+        name='email_send_log_list',
+    ),
     # ---- Gate 5 Track C: audit log admin page ----
     path(
         'workspace/<str:workspace_id>/audit-log',

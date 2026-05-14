@@ -15,6 +15,9 @@ from .document_generation import (
     DocumentGenerationRevokeView,
 )
 from .document_template import DocumentTemplateDetailView, DocumentTemplateListView
+from .email_send_log import EmailSendLogListView
+from .email_template import EmailTemplateDetailView, EmailTemplateListView
+from .materials_send import MaterialsTaskSendView
 from .materials_task import (
     MaterialsTaskDetailView,
     MaterialsTaskListView,
@@ -29,6 +32,11 @@ from .materials_task import (
 )
 from .ping import FinancePingView
 from .project import FinanceProjectDetailView, FinanceProjectListView
+from .smtp_config import (
+    SmtpConfigDetailView,
+    SmtpConfigListView,
+    SmtpConfigTestView,
+)
 
 __all__ = [
     'FinancePingView',
@@ -54,4 +62,11 @@ __all__ = [
     'MaterialsTaskSubmitReviewView',
     'MaterialsTaskReviewView',
     'MaterialsTaskZipDownloadView',
+    'SmtpConfigListView',
+    'SmtpConfigDetailView',
+    'SmtpConfigTestView',
+    'EmailTemplateListView',
+    'EmailTemplateDetailView',
+    'MaterialsTaskSendView',
+    'EmailSendLogListView',
 ]

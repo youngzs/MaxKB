@@ -210,6 +210,48 @@ const financeRouter = {
       },
       component: () => import('@/views/finance/audit/index.vue'),
     },
+    {
+      path: '/finance/settings/smtp',
+      name: 'finance-settings-smtp',
+      meta: {
+        icon: 'app-setting',
+        iconActive: 'app-setting',
+        title: 'views.finance.smtp.title',
+        activeMenu: '/finance',
+        parentPath: '/finance',
+        parentName: 'finance',
+        sameRoute: 'finance-settings-smtp',
+        order: 10,
+        permission: [
+          RoleConst.ADMIN,
+          RoleConst.WORKSPACE_MANAGE.getWorkspaceRole,
+          PermissionConst.FINANCE_SEND.getWorkspacePermission,
+          PermissionConst.FINANCE_SEND.getWorkspacePermissionWorkspaceManageRole,
+        ],
+      },
+      component: () => import('@/views/finance/settings/smtp.vue'),
+    },
+    {
+      path: '/finance/settings/email-template',
+      name: 'finance-settings-email-template',
+      meta: {
+        icon: 'app-copy',
+        iconActive: 'app-copy',
+        title: 'views.finance.emailTemplate.title',
+        activeMenu: '/finance',
+        parentPath: '/finance',
+        parentName: 'finance',
+        sameRoute: 'finance-settings-email-template',
+        order: 11,
+        permission: [
+          RoleConst.ADMIN,
+          RoleConst.WORKSPACE_MANAGE.getWorkspaceRole,
+          PermissionConst.FINANCE_SEND.getWorkspacePermission,
+          PermissionConst.FINANCE_SEND.getWorkspacePermissionWorkspaceManageRole,
+        ],
+      },
+      component: () => import('@/views/finance/settings/email-template.vue'),
+    },
   ],
 }
 
