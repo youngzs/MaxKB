@@ -1,0 +1,263 @@
+{
+  "_comment": "Gate 5 Track C preset workflow: finance materials packager. Flow: start -> ai-chat (structured parse of requirement_text into items) -> loop (per item: search-knowledge + ai-chat summary) -> zip-pack -> end. Placeholders prefixed `${workspace.}` are filled at install time.",
+  "name": "finance.materials_packager",
+  "slug": "__internal_materials_packager",
+  "version": "1.0.0",
+  "description": "材料清单解析 → 每项检索匹配 → AI 摘要 → 打包 ZIP。供 finance 材料整理页内部使用。",
+  "nodes": [
+    {
+      "id": "base-node",
+      "type": "base-node",
+      "x": 360,
+      "y": 100,
+      "properties": {
+        "config": {},
+        "height": 240,
+        "stepName": "基本信息",
+        "node_data": {
+          "desc": "财务材料整理预设流程",
+          "name": "finance_materials_packager",
+          "prologue": ""
+        },
+        "input_field_list": []
+      }
+    },
+    {
+      "id": "start-node",
+      "type": "start-node",
+      "x": 360,
+      "y": 420,
+      "properties": {
+        "config": {
+          "fields": [
+            {"label": "任务id", "value": "task_id"},
+            {"label": "项目id", "value": "project_id"},
+            {"label": "材料清单原文", "value": "requirement_text"}
+          ],
+          "globalFields": [
+            {"label": "当前时间", "value": "time"}
+          ]
+        },
+        "fields": [
+          {"label": "任务id", "value": "task_id"},
+          {"label": "项目id", "value": "project_id"},
+          {"label": "材料清单原文", "value": "requirement_text"}
+        ],
+        "height": 240,
+        "stepName": "开始",
+        "globalFields": [
+          {"label": "当前时间", "value": "time"}
+        ]
+      }
+    },
+    {
+      "id": "ai-chat-parse",
+      "type": "ai-chat-node",
+      "x": 720,
+      "y": 420,
+      "properties": {
+        "config": {
+          "fields": [
+            {"label": "解析结果", "value": "answer"}
+          ]
+        },
+        "height": 540,
+        "stepName": "AI 解析材料清单",
+        "node_data": {
+          "prompt": "请把下列材料清单原文解析为结构化数据。\n\n【清单原文】\n{{开始.requirement_text}}\n\n输出要求：\n- 仅输出 JSON 数组，每项是 {\"key\": ..., \"label\": ..., \"description\": ..., \"required\": true|false}。\n- key 为稳定标识，使用蛇形小写英文+数字，例如 \"audit_report_2024\"。\n- label 为中文显示名，description 为补充说明（若原文无则填空字符串）。\n- 不得遗漏任何条目，也不得新增。\n- 仅输出 JSON，不要解释。",
+          "system": "你是 MaxKB 财务工作台的材料解析助手，输出务必结构化且可机读。",
+          "model_id": "",
+          "dialogue_number": 0,
+          "is_result": false,
+          "_install_note": "model_id 由 install_finance_workflows 在装配时使用 workspace 默认模型填充"
+        }
+      }
+    },
+    {
+      "id": "loop-node-1",
+      "type": "loop-node",
+      "x": 1080,
+      "y": 420,
+      "properties": {
+        "config": {
+          "fields": [
+            {"label": "循环结果", "value": "loop_results"}
+          ]
+        },
+        "height": 360,
+        "stepName": "遍历清单项",
+        "node_data": {
+          "loop_data_reference": ["ai-chat-parse", "answer"],
+          "loop_variable_name": "current_item",
+          "max_iterations": 50,
+          "_install_note": "loop_data_reference 指向上一节点解析出的 JSON 数组；workflow_manage 会把每项作为 current_item 暴露给循环体"
+        }
+      }
+    },
+    {
+      "id": "loop-start-1",
+      "type": "loop-start-node",
+      "x": 1140,
+      "y": 540,
+      "properties": {
+        "config": {
+          "fields": [
+            {"label": "当前项", "value": "current_item"}
+          ]
+        },
+        "height": 160,
+        "stepName": "循环开始",
+        "parent_node_id": "loop-node-1"
+      }
+    },
+    {
+      "id": "search-knowledge-loop",
+      "type": "search-knowledge-node",
+      "x": 1320,
+      "y": 540,
+      "properties": {
+        "config": {
+          "fields": [
+            {"label": "检索结果", "value": "data"},
+            {"label": "检索结果的分段列表", "value": "paragraph_list"}
+          ]
+        },
+        "height": 480,
+        "stepName": "检索匹配文档",
+        "parent_node_id": "loop-node-1",
+        "node_data": {
+          "knowledge_id_list": [],
+          "knowledge_setting": {
+            "top_n": 3,
+            "similarity": 0.55,
+            "search_mode": "blend",
+            "max_paragraph_char_number": 3000
+          },
+          "question_reference_address": ["loop-start-1", "current_item"],
+          "show_knowledge": false,
+          "search_scope_type": "custom",
+          "search_scope_source": "knowledge",
+          "search_scope_reference": [],
+          "_install_note": "knowledge_id_list 由 install_finance_workflows 填充为项目关联知识库"
+        }
+      }
+    },
+    {
+      "id": "ai-chat-summary",
+      "type": "ai-chat-node",
+      "x": 1620,
+      "y": 540,
+      "properties": {
+        "config": {
+          "fields": [
+            {"label": "摘要", "value": "answer"}
+          ]
+        },
+        "height": 480,
+        "stepName": "AI 摘要",
+        "parent_node_id": "loop-node-1",
+        "node_data": {
+          "prompt": "请基于检索到的文档片段，为当前清单项生成不超过 200 字的中文摘要。\n\n【清单项】{{循环开始.current_item}}\n\n【匹配片段】\n{{检索匹配文档.data}}\n\n要求：客观、可追溯；若片段不足以支撑结论，请显式说明 \"信息不足\"。",
+          "system": "你是 MaxKB 财务工作台的材料摘要助手。",
+          "model_id": "",
+          "dialogue_number": 0,
+          "is_result": false,
+          "_install_note": "model_id 由 install_finance_workflows 填充"
+        }
+      }
+    },
+    {
+      "id": "zip-pack-1",
+      "type": "zip-pack-node",
+      "x": 1980,
+      "y": 420,
+      "properties": {
+        "config": {
+          "fields": [
+            {"label": "ZIP 文件key", "value": "output_oss_key"},
+            {"label": "已打包数量", "value": "included_count"},
+            {"label": "缺失列表", "value": "missing"},
+            {"label": "错误信息", "value": "error"}
+          ]
+        },
+        "height": 420,
+        "stepName": "打包 ZIP",
+        "node_data": {
+          "document_oss_keys_reference": ["loop-node-1", "loop_results.document_oss_keys"],
+          "document_names_reference": ["loop-node-1", "loop_results.document_names"],
+          "item_folders_reference": ["loop-node-1", "loop_results.item_folders"],
+          "archive_name": "materials.zip",
+          "is_result": true,
+          "_install_note": "实际打包路径在后端通过 finance.service.materials_task.build_archive 完成；此节点作为骨架占位以保证图完整"
+        }
+      }
+    },
+    {
+      "id": "end-node",
+      "type": "end-node",
+      "x": 2340,
+      "y": 420,
+      "properties": {
+        "config": {},
+        "height": 200,
+        "stepName": "结束"
+      }
+    }
+  ],
+  "edges": [
+    {
+      "id": "edge-start-parse",
+      "type": "app-edge",
+      "sourceNodeId": "start-node",
+      "targetNodeId": "ai-chat-parse",
+      "sourceAnchorId": "start-node_right",
+      "targetAnchorId": "ai-chat-parse_left",
+      "properties": {}
+    },
+    {
+      "id": "edge-parse-loop",
+      "type": "app-edge",
+      "sourceNodeId": "ai-chat-parse",
+      "targetNodeId": "loop-node-1",
+      "sourceAnchorId": "ai-chat-parse_right",
+      "targetAnchorId": "loop-node-1_left",
+      "properties": {}
+    },
+    {
+      "id": "edge-loopstart-search",
+      "type": "app-edge",
+      "sourceNodeId": "loop-start-1",
+      "targetNodeId": "search-knowledge-loop",
+      "sourceAnchorId": "loop-start-1_right",
+      "targetAnchorId": "search-knowledge-loop_left",
+      "properties": {}
+    },
+    {
+      "id": "edge-search-summary",
+      "type": "app-edge",
+      "sourceNodeId": "search-knowledge-loop",
+      "targetNodeId": "ai-chat-summary",
+      "sourceAnchorId": "search-knowledge-loop_right",
+      "targetAnchorId": "ai-chat-summary_left",
+      "properties": {}
+    },
+    {
+      "id": "edge-loop-zip",
+      "type": "app-edge",
+      "sourceNodeId": "loop-node-1",
+      "targetNodeId": "zip-pack-1",
+      "sourceAnchorId": "loop-node-1_right",
+      "targetAnchorId": "zip-pack-1_left",
+      "properties": {}
+    },
+    {
+      "id": "edge-zip-end",
+      "type": "app-edge",
+      "sourceNodeId": "zip-pack-1",
+      "targetNodeId": "end-node",
+      "sourceAnchorId": "zip-pack-1_right",
+      "targetAnchorId": "end-node_left",
+      "properties": {}
+    }
+  ]
+}

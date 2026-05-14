@@ -13,6 +13,7 @@ import useFinanceProjectStore from './modules/finance-project'
 import useFinanceTemplateStore from './modules/finance-template'
 import useFinanceGenerationStore from './modules/finance-generation'
 import useFinanceMaterialsStore from './modules/finance-materials'
+import useFinanceAuditStore from './modules/finance-audit'
 const useStore = () => ({
   common: useCommonStore(),
   login: useLoginStore(),
@@ -29,6 +30,7 @@ const useStore = () => ({
   financeTemplate: useFinanceTemplateStore(),
   financeGeneration: useFinanceGenerationStore(),
   financeMaterials: useFinanceMaterialsStore(),
+  financeAudit: useFinanceAuditStore(),
 })
 
 export default useStore

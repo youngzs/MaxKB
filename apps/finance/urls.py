@@ -116,4 +116,10 @@ urlpatterns = [
         views.MaterialsTaskZipDownloadView.as_view(),
         name='materials_task_zip',
     ),
+    # ---- Gate 5 Track C: audit log admin page ----
+    path(
+        'workspace/<str:workspace_id>/audit-log',
+        views.FinanceAuditLogListView.as_view(),
+        name='audit_log_list',
+    ),
 ]

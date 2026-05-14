@@ -4,6 +4,7 @@
     @file： __init__.py
     @desc: finance views package
 """
+from .audit_log import FinanceAuditLogListView
 from .document_generation import (
     DocumentGenerationAIFillView,
     DocumentGenerationConfirmView,
@@ -31,6 +32,7 @@ from .project import FinanceProjectDetailView, FinanceProjectListView
 
 __all__ = [
     'FinancePingView',
+    'FinanceAuditLogListView',
     'FinanceProjectListView',
     'FinanceProjectDetailView',
     'DocumentTemplateListView',

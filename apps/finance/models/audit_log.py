@@ -18,6 +18,10 @@ class FinanceAuditTargetType(models.TextChoices):
     MATERIALS_TASK = 'MATERIALS_TASK', 'materials_task'
     DOC_TEMPLATE = 'DOC_TEMPLATE', 'doc_template'
     DOC_GENERATION = 'DOC_GENERATION', 'doc_generation'
+    # Added Gate 5 Track C alongside the audit-log admin page so the
+    # SMTP-config flows shipped by Track B have a target_type to file
+    # under.
+    SMTP_CONFIG = 'SMTP_CONFIG', 'smtp_config'
     OTHER = 'OTHER', 'other'
 
 

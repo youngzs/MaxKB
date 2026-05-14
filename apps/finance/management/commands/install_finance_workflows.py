@@ -2,75 +2,171 @@
 """
     @project: MaxKB
     @file： install_finance_workflows.py
-    @desc: Skeleton management command. Gate 3 ships only the loading +
-    discovery half; the actual install into application's workflow table
-    happens in Gate 5 once Track B publishes the docx_render_node and the
-    workflow shape is finalised.
+    @desc: Install preset finance workflows (Gate 5 Track C — real install).
+
+    Discovers JSON files in ``apps/finance/data/internal_workflows/`` and
+    upserts each one into the ``application`` table as an internal
+    finance-managed Application of type ``WORK_FLOW``. Reinstalls are
+    idempotent: the row id is deterministic per slug, so running the
+    command twice updates in place rather than duplicating.
+
+    Note: the JSONs ship with placeholder fields ('' or empty list) for the
+    workspace-specific bits (``knowledge_id_list`` on search nodes, model
+    id on AI chat nodes). The actual values are injected at runtime when
+    the workflow is dispatched from a finance view — we deliberately do
+    NOT bake workspace state into the row, so a single internal workflow
+    serves every workspace.
 
     Usage::
 
-        python apps/manage.py install_finance_workflows [--workspace-id <uuid>] [--dry-run]
+        python apps/manage.py install_finance_workflows
+        python apps/manage.py install_finance_workflows --dry-run
+        python apps/manage.py install_finance_workflows --workspace-id <id>
 """
 import json
 import os
+import uuid
 
 from django.core.management.base import BaseCommand
 
-
 _WORKFLOWS_DIR = os.path.join(os.path.dirname(__file__), '..', '..', 'data', 'internal_workflows')
+
+# Stable UUID-5 namespace for finance-internal workflows. Generated once and
+# pinned so the (namespace, slug) -> UUID mapping is reproducible across
+# environments. DO NOT change this value — it would orphan existing rows.
+_FINANCE_INTERNAL_NS = uuid.UUID('5b9e7c30-2f93-5d5c-9b3c-1f1c6a2b0001')
+
+
+def _deterministic_id(slug: str) -> uuid.UUID:
+    """Derive a stable UUID for ``slug`` so re-installs hit the same row."""
+    return uuid.uuid5(_FINANCE_INTERNAL_NS, slug)
+
+
+def _load_workflow_files(workflows_dir: str):
+    """
+    Return a list of ``(filename, parsed_json)`` tuples sorted by filename.
+
+    Skips non-JSON files and files that don't parse — those surface as
+    warnings on the command stdout so a malformed install candidate doesn't
+    silently disappear.
+    """
+    workflows = []
+    if not os.path.isdir(workflows_dir):
+        return workflows
+    for name in sorted(os.listdir(workflows_dir)):
+        if not name.endswith('.json'):
+            continue
+        path = os.path.join(workflows_dir, name)
+        try:
+            with open(path, 'r', encoding='utf-8') as fh:
+                data = json.load(fh)
+        except (OSError, json.JSONDecodeError):
+            workflows.append((name, None))
+            continue
+        workflows.append((name, data))
+    return workflows
 
 
 class Command(BaseCommand):
-    help = 'Install preset finance workflows (Gate 3 SKELETON — logs intent, does not write)'
+    help = 'Install preset finance workflows as internal Applications (idempotent upsert by slug).'
 
     def add_arguments(self, parser):
         parser.add_argument(
             '--workspace-id',
             type=str,
-            default=None,
-            help='Target workspace id; if omitted, all active workspaces are targeted in Gate 5.',
+            default='default',
+            help=(
+                'Workspace id to attach the internal workflows to. Defaults '
+                "to 'default' — finance views resolve the internal workflow by "
+                'slug regardless of workspace, so this is mostly cosmetic but '
+                'lets multi-tenant deployments scope the bookkeeping rows.'
+            ),
         )
         parser.add_argument(
             '--dry-run',
             action='store_true',
-            help='Print what would be installed without writing (default behaviour today).',
+            help='Discover and validate workflows but do not write to the database.',
         )
 
     def handle(self, *args, **options):
-        workflows = []
-        try:
-            workflows_dir = os.path.normpath(_WORKFLOWS_DIR)
-            for name in sorted(os.listdir(workflows_dir)):
-                if not name.endswith('.json'):
-                    continue
-                path = os.path.join(workflows_dir, name)
-                with open(path, 'r', encoding='utf-8') as fh:
-                    data = json.load(fh)
-                workflows.append((name, data))
-        except FileNotFoundError:
-            self.stdout.write(self.style.WARNING(f'No workflows directory at {_WORKFLOWS_DIR}'))
+        workspace_id = options['workspace_id']
+        dry_run = options['dry_run']
+
+        workflows_dir = os.path.normpath(_WORKFLOWS_DIR)
+        workflows = _load_workflow_files(workflows_dir)
+
+        if not workflows:
+            self.stdout.write(self.style.WARNING(
+                f'No finance workflow files found in {workflows_dir}'
+            ))
             return
 
         self.stdout.write(self.style.NOTICE(
-            f'Discovered {len(workflows)} finance workflow file(s) in {_WORKFLOWS_DIR}'
+            f'Discovered {len(workflows)} finance workflow file(s) in {workflows_dir}'
         ))
-        for name, data in workflows:
-            wf_name = data.get('name', '<unnamed>')
-            wf_version = data.get('version', '?')
-            node_count = len(data.get('nodes') or [])
-            edge_count = len(data.get('edges') or [])
+
+        # Lazy import: the management command is loaded during Django setup,
+        # but the Application model itself requires the full app stack to be
+        # initialised first. Importing inside handle() keeps `--help` and
+        # syntax checks cheap.
+        from application.models.application import Application, ApplicationTypeChoices
+
+        installed = 0
+        updated = 0
+        skipped = 0
+
+        for filename, data in workflows:
+            if data is None:
+                self.stdout.write(self.style.ERROR(f'  ✗ {filename}: failed to parse, skipped'))
+                skipped += 1
+                continue
+
+            slug = data.get('slug') or ''
+            if not slug:
+                # Fall back to a slug derived from the filename so older JSONs
+                # without an explicit slug still get a stable id.
+                slug = '__internal_' + os.path.splitext(filename)[0]
+
+            wf_id = _deterministic_id(slug)
+            name = data.get('name') or slug
+            description = data.get('description') or ''
+            nodes = data.get('nodes') or []
+            edges = data.get('edges') or []
             self.stdout.write(
-                f'  - {name}: name={wf_name} version={wf_version} '
-                f'nodes={node_count} edges={edge_count}'
+                f'  - {filename}: slug={slug} id={wf_id} '
+                f'nodes={len(nodes)} edges={len(edges)} '
+                f'version={data.get("version", "?")}'
             )
 
-        # TODO(Gate 5):
-        #   1. Resolve target workspaces (--workspace-id or all active).
-        #   2. For each workspace, materialise the workflow JSON:
-        #        - substitute knowledge_base_ids placeholder
-        #        - resolve workspace's default model id
-        #   3. Upsert into application.models.Application as an "internal"
-        #      workflow keyed by (workspace_id, internal_name).
-        self.stdout.write(self.style.WARNING(
-            '[Gate 3 skeleton] No rows written. Real install lands in Gate 5 alongside the docx_render_node.'
-        ))
+            if dry_run:
+                continue
+
+            work_flow_payload = {'nodes': nodes, 'edges': edges}
+            defaults = {
+                'workspace_id': workspace_id,
+                'name': name,
+                'desc': description[:512],
+                'work_flow': work_flow_payload,
+                'type': ApplicationTypeChoices.WORK_FLOW,
+                'is_publish': True,
+            }
+
+            obj, created = Application.objects.update_or_create(
+                id=wf_id,
+                defaults=defaults,
+            )
+            if created:
+                installed += 1
+                self.stdout.write(self.style.SUCCESS(f'    ✓ created application id={obj.id}'))
+            else:
+                updated += 1
+                self.stdout.write(self.style.SUCCESS(f'    ↻ updated application id={obj.id}'))
+
+        if dry_run:
+            self.stdout.write(self.style.WARNING(
+                '[dry-run] No rows written. Re-run without --dry-run to install.'
+            ))
+        else:
+            self.stdout.write(self.style.NOTICE(
+                f'Done. installed={installed} updated={updated} skipped={skipped}'
+            ))

@@ -245,3 +245,52 @@ export interface MaterialsTaskReviewBody {
   action: 'pass' | 'reject'
   comment?: string
 }
+
+/* ──────────────────────────────────────────────────────────────────────────
+ *  Audit Log (Gate 5 Track C)
+ *  Mount: /admin/api/finance/workspace/<workspace_id>/audit-log
+ * ─────────────────────────────────────────────────────────────────────── */
+
+export type AuditTargetType =
+  | 'PROJECT'
+  | 'MATERIALS_TASK'
+  | 'DOC_TEMPLATE'
+  | 'DOC_GENERATION'
+  | 'SMTP_CONFIG'
+  | 'OTHER'
+
+export type AuditAction =
+  | 'CREATE'
+  | 'UPDATE'
+  | 'DELETE'
+  | 'READ'
+  | 'REVIEW_PASS'
+  | 'REVIEW_REJECT'
+  | 'SEND'
+  | 'DOWNLOAD'
+
+export interface AuditLogEntry {
+  id: string
+  workspace_id: string
+  actor_id: string
+  target_type: AuditTargetType
+  target_id: string | null
+  action: AuditAction
+  /** Redacted JSON snapshot of the inbound request (path, method, body, query). */
+  payload: Record<string, unknown>
+  ip: string | null
+  user_agent: string
+  created_at: string
+}
+
+export interface AuditLogListParams {
+  target_type?: AuditTargetType | ''
+  action?: AuditAction | ''
+  actor_id?: string
+  target_id?: string
+  date_from?: string
+  date_to?: string
+  keyword?: string
+  page?: number
+  size?: number
+}
