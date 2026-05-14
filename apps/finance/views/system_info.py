@@ -227,6 +227,114 @@ def _recent_errors(workspace_id: str, limit: int = 5) -> list[dict[str, Any]]:
         return []
 
 
+# Celery task names registered by the finance module (apps/finance/tasks/).
+# Used to filter the worker's full registry down to "ours" so the operator
+# sees at a glance whether the finance pipeline tasks are loaded.
+_FINANCE_TASK_NAMES = (
+    'finance.materials.async_parse',
+    'finance.materials.async_match',
+    'finance.materials.async_pack',
+    'finance.documents.async_generate',
+)
+
+
+def _celery_health() -> dict[str, Any]:
+    """
+    Best-effort Celery worker health probe.
+
+    Returns:
+      worker_online            — True iff at least one worker answered ping()
+      registered_finance_tasks — finance.* task names visible in the worker
+                                  registry (subset of _FINANCE_TASK_NAMES)
+      active_count             — tasks currently executing across workers
+      queued_estimate          — best-effort reserved+scheduled count; None
+                                  if it can't be determined
+
+    EVERYTHING is try/except guarded — Celery / broker being unreachable
+    must NEVER 500 the system-info endpoint. On any failure we degrade to
+    worker_online=False with the rest nulled/empty.
+    """
+    out: dict[str, Any] = {
+        'worker_online': False,
+        'registered_finance_tasks': [],
+        'active_count': 0,
+        'queued_estimate': None,
+    }
+    try:
+        # The finance worker runs `-A ops`; apps/ops/__init__.py exports
+        # `celery_app`. Importing it here (not at module load) keeps a
+        # broker-config error from breaking the whole views package.
+        from ops import celery_app
+
+        # --- ping: is anyone home? -------------------------------------
+        try:
+            pong = celery_app.control.ping(timeout=2)
+            out['worker_online'] = bool(pong)
+        except Exception as exc:  # noqa: BLE001
+            maxkb_logger.warning(f'[finance.system_info] celery ping failed: {exc}')
+            return out
+
+        if not out['worker_online']:
+            # No worker answered — the remaining inspect() calls would
+            # just time out. Return early with the offline shape.
+            return out
+
+        # --- inspect: registry / active / reserved ---------------------
+        try:
+            inspector = celery_app.control.inspect(timeout=2)
+        except Exception as exc:  # noqa: BLE001
+            maxkb_logger.warning(f'[finance.system_info] celery inspect() failed: {exc}')
+            return out
+
+        # registered finance tasks (union across all workers)
+        try:
+            registered = inspector.registered() or {}
+            seen: set[str] = set()
+            for task_list in registered.values():
+                for name in task_list or []:
+                    if name in _FINANCE_TASK_NAMES:
+                        seen.add(name)
+            out['registered_finance_tasks'] = sorted(seen)
+        except Exception as exc:  # noqa: BLE001
+            maxkb_logger.warning(
+                f'[finance.system_info] celery registered() failed: {exc}'
+            )
+
+        # active task count (union across all workers)
+        try:
+            active = inspector.active() or {}
+            out['active_count'] = sum(
+                len(task_list or []) for task_list in active.values()
+            )
+        except Exception as exc:  # noqa: BLE001
+            maxkb_logger.warning(
+                f'[finance.system_info] celery active() failed: {exc}'
+            )
+
+        # queued estimate — reserved (prefetched, not yet executing) plus
+        # scheduled (ETA/countdown). Best-effort: this is NOT the broker
+        # queue depth, just what the workers have pulled. None if neither
+        # probe succeeds.
+        try:
+            reserved = inspector.reserved() or {}
+            scheduled = inspector.scheduled() or {}
+            estimate = sum(
+                len(task_list or []) for task_list in reserved.values()
+            ) + sum(
+                len(task_list or []) for task_list in scheduled.values()
+            )
+            out['queued_estimate'] = estimate
+        except Exception as exc:  # noqa: BLE001
+            maxkb_logger.warning(
+                f'[finance.system_info] celery reserved/scheduled failed: {exc}'
+            )
+            out['queued_estimate'] = None
+    except Exception as exc:  # noqa: BLE001
+        # Catch-all — import failure, attribute error, anything.
+        maxkb_logger.warning(f'[finance.system_info] celery health probe failed: {exc}')
+    return out
+
+
 def _ai_model_configured(workspace_id: str) -> bool:
     """True iff ``get_workspace_chat_model`` returns a non-None instance.
 
@@ -283,6 +391,7 @@ class FinanceSystemInfoView(APIView):
             'documents_with_sensitivity': _sensitivity_histogram(workspace_id),
             'recent_errors': _recent_errors(workspace_id),
             'ai_model_configured': _ai_model_configured(workspace_id),
+            'celery': _celery_health(),
             'deps': _dep_versions(),
         }
         return result.success(data)

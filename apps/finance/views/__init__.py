@@ -4,6 +4,7 @@
     @file： __init__.py
     @desc: finance views package
 """
+from .ai_status import FinanceAiStatusView
 from .audit_log import FinanceAuditLogExportView, FinanceAuditLogListView
 from .document_generation import (
     DocumentGenerationAIFillView,
@@ -41,7 +42,11 @@ from .smtp_config import (
     SmtpConfigTestView,
 )
 from .system_info import FinanceSystemInfoView
-from .workflow_run import FinanceWorkflowRunListView
+from .workflow_run import (
+    FinanceWorkflowRunListView,
+    WorkflowRunCancelView,
+    WorkflowRunRetryView,
+)
 
 __all__ = [
     'FinancePingView',
@@ -80,4 +85,7 @@ __all__ = [
     'EmailSendLogListView',
     'FinanceSystemInfoView',
     'FinanceWorkflowRunListView',
+    'WorkflowRunRetryView',
+    'WorkflowRunCancelView',
+    'FinanceAiStatusView',
 ]

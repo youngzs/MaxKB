@@ -1,6 +1,6 @@
 import { type Ref } from 'vue'
 import type { Result } from '@/request/Result'
-import { get } from '@/request/index'
+import { get, post } from '@/request/index'
 import type { PageResult } from './type'
 
 /**
@@ -19,6 +19,7 @@ export type WorkflowRunStatus =
   | 'succeeded'
   | 'failed'
   | 'retrying'
+  | 'cancelled'
 
 export type WorkflowRunTargetType =
   | 'MATERIALS_TASK'
@@ -69,6 +70,42 @@ export const listWorkflowRuns: (
   return get(buildUrl(workspaceId), params, loading)
 }
 
+/** Result of a retry: the original run id + the freshly-queued run. */
+export interface WorkflowRunRetryResult {
+  retried_from: string
+  new_run: WorkflowRun | null
+}
+
+/**
+ * POST /finance/workspace/<wid>/workflow-run/<id>/retry
+ * Re-dispatches a failed/cancelled run as a NEW WorkflowRun row.
+ */
+export const retryWorkflowRun: (
+  workspaceId: string,
+  runId: string,
+  loading?: Ref<boolean>,
+) => Promise<Result<WorkflowRunRetryResult>> = (
+  workspaceId,
+  runId,
+  loading,
+) => {
+  return post(`${buildUrl(workspaceId)}/${runId}/retry`, undefined, undefined, loading)
+}
+
+/**
+ * POST /finance/workspace/<wid>/workflow-run/<id>/cancel
+ * Revokes a queued/running/retrying run and fails the underlying target.
+ */
+export const cancelWorkflowRun: (
+  workspaceId: string,
+  runId: string,
+  loading?: Ref<boolean>,
+) => Promise<Result<WorkflowRun>> = (workspaceId, runId, loading) => {
+  return post(`${buildUrl(workspaceId)}/${runId}/cancel`, undefined, undefined, loading)
+}
+
 export default {
   listWorkflowRuns,
+  retryWorkflowRun,
+  cancelWorkflowRun,
 }

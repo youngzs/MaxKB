@@ -5,7 +5,35 @@
         <h2 class="finance-audit__title">{{ $t('views.finance.audit') }}</h2>
         <p class="finance-audit__subtitle">{{ $t('views.finance.auditPage.subtitle') }}</p>
       </div>
-      <div class="flex" style="gap: 8px">
+      <div class="flex" style="gap: 8px; align-items: center">
+        <!-- Gate 8 Track B: Celery worker health card -->
+        <div class="finance-audit__worker-health" v-if="!workerHealthLoading || celeryHealth">
+          <span class="finance-audit__worker-health-label">
+            {{ $t('views.finance.workerHealth.title') }}
+          </span>
+          <el-tag
+            :type="celeryHealth?.worker_online ? 'success' : 'danger'"
+            size="small"
+            disable-transitions
+            effect="plain"
+          >
+            {{
+              celeryHealth?.worker_online
+                ? $t('views.finance.workerHealth.online')
+                : $t('views.finance.workerHealth.offline')
+            }}
+          </el-tag>
+          <span
+            class="finance-audit__worker-health-tasks"
+            v-if="celeryHealth"
+          >
+            {{
+              $t('views.finance.workerHealth.tasksRegistered', {
+                n: celeryHealth.registered_finance_tasks.length,
+              })
+            }}
+          </span>
+        </div>
         <el-button
           type="primary"
           plain
@@ -284,6 +312,7 @@ import useStore from '@/stores'
 import { hasPermission } from '@/utils/permission'
 import { RoleConst } from '@/utils/permission/data'
 import { exportAuditLog } from '@/api/finance/audit-log'
+import { getSystemInfo, type CeleryHealth } from '@/api/finance/system-info'
 import type {
   AuditAction,
   AuditLogEntry,
@@ -493,6 +522,28 @@ const openPayloadDialog = (row: AuditLogEntry) => {
   payloadDialogVisible.value = true
 }
 
+// ----- Gate 8 Track B: Celery worker health card -----
+// Surfaces the system-info `celery` section. Best-effort — a failed fetch
+// just leaves celeryHealth null and the card shows "offline".
+const celeryHealth = ref<CeleryHealth | null>(null)
+const workerHealthLoading = ref(false)
+
+const fetchWorkerHealth = async () => {
+  if (!isAdmin) return
+  const workspaceId = user.getWorkspaceId()
+  if (!workspaceId) return
+  workerHealthLoading.value = true
+  try {
+    const res = await getSystemInfo(workspaceId)
+    celeryHealth.value = res?.data?.celery ?? null
+  } catch {
+    // swallow — the card is diagnostic, not load-bearing.
+    celeryHealth.value = null
+  } finally {
+    workerHealthLoading.value = false
+  }
+}
+
 onMounted(() => {
   if (!isAdmin) {
     // Soft-redirect non-admins back to the overview rather than 403.
@@ -500,6 +551,7 @@ onMounted(() => {
     return
   }
   fetchList()
+  fetchWorkerHealth()
 })
 </script>
 
@@ -516,6 +568,25 @@ onMounted(() => {
     margin: 0;
     color: var(--el-text-color-regular);
     font-size: 13px;
+  }
+
+  &__worker-health {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 10px;
+    margin-right: 4px;
+    border-radius: 6px;
+    background: var(--el-fill-color-light);
+    font-size: 12px;
+  }
+
+  &__worker-health-label {
+    color: var(--el-text-color-secondary);
+  }
+
+  &__worker-health-tasks {
+    color: var(--el-text-color-secondary);
   }
 
   &__filters {

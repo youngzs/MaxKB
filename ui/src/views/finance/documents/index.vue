@@ -8,6 +8,8 @@
       </el-button>
     </div>
 
+    <FinanceAiBanner />
+
     <div class="finance-documents__filters mb-16 flex">
       <el-select
         v-model="projectFilter"
@@ -225,6 +227,7 @@ import { PermissionConst, RoleConst } from '@/utils/permission/data'
 import type { Generation, GenerationStatus } from '@/api/finance/type'
 import DocxPreview from '@/components/docx-preview/index.vue'
 import WorkflowRunDrawer from '../components/WorkflowRunDrawer.vue'
+import FinanceAiBanner from '@/components/finance-ai-banner/index.vue'
 
 const router = useRouter()
 const {

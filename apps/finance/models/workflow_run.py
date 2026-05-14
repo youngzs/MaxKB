@@ -24,6 +24,10 @@ class WorkflowRunStatus(models.TextChoices):
     SUCCEEDED = 'succeeded', '成功'
     FAILED = 'failed', '失败'
     RETRYING = 'retrying', '重试中'
+    # Gate 8 Track B: user-initiated cancellation of an in-flight run.
+    # Distinct from FAILED so the recovery UI can offer "retry" on both
+    # while ops dashboards can tell apart genuine failures from cancels.
+    CANCELLED = 'cancelled', '已取消'
 
 
 class WorkflowRunTargetType(models.TextChoices):
