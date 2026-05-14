@@ -15,6 +15,7 @@ from .email_template import EmailTemplate, EmailTemplateScenario
 from .materials_task import MaterialsTask, MaterialsTaskStatus
 from .project import FinanceProject, FinanceProjectStatus, FinanceProjectType
 from .smtp_config import SmtpConfig
+from .workflow_run import WorkflowRun, WorkflowRunStatus, WorkflowRunTargetType
 
 __all__ = [
     'FinanceProject',
@@ -34,4 +35,7 @@ __all__ = [
     'EmailTemplateScenario',
     'EmailSendLog',
     'EmailSendStatus',
+    'WorkflowRun',
+    'WorkflowRunStatus',
+    'WorkflowRunTargetType',
 ]

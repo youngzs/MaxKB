@@ -29,6 +29,7 @@
 """
 from __future__ import annotations
 
+import os
 import urllib.parse
 
 from django.http import HttpResponse
@@ -71,6 +72,20 @@ _DEFAULT_SIZE = 20
 _MAX_SIZE = 200
 _ZIP_MIME = 'application/zip'
 _REQUIREMENT_FILE_SOURCE_ID = 'FINANCE_MATERIALS_REQUIREMENT'
+
+
+def _async_enabled() -> bool:
+    """
+    Feature flag for the Gate 7 Track B async pipeline.
+
+    Defaults to True (async). Set FINANCE_ASYNC_ENABLED=0/false/no to fall
+    back to the synchronous Gate 4 code path — useful when Celery is
+    unavailable or for deterministic tests.
+    """
+    raw = (os.environ.get('FINANCE_ASYNC_ENABLED') or '').strip().lower()
+    if raw in {'0', 'false', 'no', 'off'}:
+        return False
+    return True
 
 
 # ----- helpers ---------------------------------------------------------
@@ -463,7 +478,27 @@ class MaterialsTaskParseView(APIView):
     @audit_log(action=FinanceAuditAction.UPDATE, target_type=FinanceAuditTargetType.MATERIALS_TASK)
     def post(self, request: Request, workspace_id, pk):
         instance = _get_or_404(workspace_id, pk)
-        instance = _do_parse(instance, workspace_id=workspace_id)
+        if _async_enabled():
+            from finance.service.workflow_runtime import create_queued_run
+            from finance.tasks import async_parse
+
+            # Capture the queued-run id so the worker can promote it once
+            # it picks the task up. State transition to PARSING is
+            # performed inside the task to avoid a moment where status
+            # says PARSING but no run row exists yet.
+            wr = create_queued_run(
+                workspace_id=workspace_id,
+                target_type='MATERIALS_TASK',
+                target_id=instance.id,
+                task_name='finance.materials.async_parse',
+                payload={'workspace_id': str(workspace_id)},
+            )
+            instance.status = MaterialsTaskStatus.PARSING
+            instance.error_message = ''
+            instance.save(update_fields=['status', 'error_message', 'updated_at'])
+            async_parse.delay(str(instance.id), run_id=str(wr.id) if wr else None)
+        else:
+            instance = _do_parse(instance, workspace_id=workspace_id)
         return result.success(MaterialsTaskOutputSerializer(instance).data)
 
 
@@ -486,7 +521,32 @@ class MaterialsTaskMatchView(APIView):
     def post(self, request: Request, workspace_id, pk):
         instance = _get_or_404(workspace_id, pk)
         user_max = get_user_max_sensitivity(request.user, workspace_id)
-        instance = _do_match(instance, workspace_id=workspace_id, user_max_sensitivity=user_max)
+        if _async_enabled():
+            from finance.service.workflow_runtime import create_queued_run
+            from finance.tasks import async_match
+
+            wr = create_queued_run(
+                workspace_id=workspace_id,
+                target_type='MATERIALS_TASK',
+                target_id=instance.id,
+                task_name='finance.materials.async_match',
+                payload={
+                    'workspace_id': str(workspace_id),
+                    'user_max_sensitivity': user_max,
+                },
+            )
+            instance.status = MaterialsTaskStatus.MATCHING
+            instance.error_message = ''
+            instance.save(update_fields=['status', 'error_message', 'updated_at'])
+            async_match.delay(
+                str(instance.id),
+                user_max_sensitivity=user_max,
+                run_id=str(wr.id) if wr else None,
+            )
+        else:
+            instance = _do_match(
+                instance, workspace_id=workspace_id, user_max_sensitivity=user_max
+            )
         return result.success(MaterialsTaskOutputSerializer(instance).data)
 
 
@@ -566,11 +626,33 @@ class MaterialsTaskPackView(APIView):
         body.is_valid(raise_exception=True)
         payload = body.validated_data
         instance = _get_or_404(workspace_id, pk)
-        instance = _do_pack(
-            instance,
-            workspace_id=workspace_id,
-            override_groups=payload.get('item_groups'),
-        )
+        if _async_enabled():
+            from finance.service.workflow_runtime import create_queued_run
+            from finance.tasks import async_pack
+
+            wr = create_queued_run(
+                workspace_id=workspace_id,
+                target_type='MATERIALS_TASK',
+                target_id=instance.id,
+                task_name='finance.materials.async_pack',
+                payload={'workspace_id': str(workspace_id)},
+            )
+            # MATCHING is reused as the "work in progress" indicator for
+            # the pack step; the UI's `isTransient` already covers it.
+            instance.status = MaterialsTaskStatus.MATCHING
+            instance.error_message = ''
+            instance.save(update_fields=['status', 'error_message', 'updated_at'])
+            async_pack.delay(
+                str(instance.id),
+                item_groups=payload.get('item_groups'),
+                run_id=str(wr.id) if wr else None,
+            )
+        else:
+            instance = _do_pack(
+                instance,
+                workspace_id=workspace_id,
+                override_groups=payload.get('item_groups'),
+            )
         return result.success(MaterialsTaskOutputSerializer(instance).data)
 
 

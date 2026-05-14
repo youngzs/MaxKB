@@ -12,6 +12,7 @@
       - FINANCE_REVIEW for confirm/revoke
       - FINANCE_EDIT for AI-fill (writing into an in-progress draft).
 """
+import os
 import urllib.parse
 
 from django.http import HttpResponse
@@ -53,6 +54,14 @@ _DEFAULT_PAGE = 1
 _DEFAULT_SIZE = 20
 _MAX_SIZE = 200
 _DOCX_MIME = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+
+
+def _async_enabled() -> bool:
+    """Mirror of materials_task._async_enabled — Gate 7 Track B feature flag."""
+    raw = (os.environ.get('FINANCE_ASYNC_ENABLED') or '').strip().lower()
+    if raw in {'0', 'false', 'no', 'off'}:
+        return False
+    return True
 
 
 def _parse_int(value, default):
@@ -259,11 +268,32 @@ class DocumentGenerationListView(APIView):
             status=GenerationStatus.GENERATING,
             created_by=request.user.id,
         )
-        # Synchronous render — Gate 3 MVP; small docs render in <1s. Gate 5
-        # will wrap trigger_generation in a Celery task and have this view
-        # return immediately while status=GENERATING.
-        trigger_generation(gen.id)
-        gen.refresh_from_db()
+        # Gate 7 Track B: hand off to Celery so the HTTP request returns
+        # immediately. The row stays in status=GENERATING until the worker
+        # promotes it to PENDING_REVIEW (or FAILED). Frontend polls via
+        # the existing detail endpoint.
+        if _async_enabled():
+            from finance.service.workflow_runtime import create_queued_run
+            from finance.tasks import async_generate
+
+            wr = create_queued_run(
+                workspace_id=workspace_id,
+                target_type='DOC_GENERATION',
+                target_id=gen.id,
+                task_name='finance.documents.async_generate',
+                payload={
+                    'workspace_id': str(workspace_id),
+                    'template_id': str(template.id),
+                    'project_id': str(project.id),
+                },
+            )
+            if wr is not None:
+                gen.workflow_run_id = wr.id
+                gen.save(update_fields=['workflow_run_id', 'updated_at'])
+            async_generate.delay(str(gen.id), run_id=str(wr.id) if wr else None)
+        else:
+            trigger_generation(gen.id)
+            gen.refresh_from_db()
         return result.success(DocumentGenerationOutputSerializer(gen).data)
 
 

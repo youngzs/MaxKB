@@ -337,7 +337,13 @@ const canDownload = (row: Generation) =>
 const fetchList = () => {
   const workspaceId = user.getWorkspaceId()
   if (!workspaceId) return
-  store.fetchList(workspaceId)
+  void store.fetchList(workspaceId).then(() => {
+    const hasInFlight = (store.list || []).some(
+      (g: Generation) => g.status === 'generating',
+    )
+    if (hasInFlight) startGeneratingPoll()
+    else stopGeneratingPoll()
+  })
 }
 
 // Gate 7 Track B: generation is now async (status stays `generating` until
@@ -448,6 +454,10 @@ onMounted(async () => {
     templateStore.fetchList(workspaceId),
   ])
   fetchList()
+})
+
+onBeforeUnmount(() => {
+  stopGeneratingPoll()
 })
 </script>
 

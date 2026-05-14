@@ -111,6 +111,17 @@
               : $t('views.finance.materials.detail.matchingMessage')
           }}
         </p>
+        <p class="finance-materials-detail__progress-hint">
+          {{ $t('views.finance.materials.detail.progressHint') }}
+        </p>
+        <el-button
+          link
+          type="primary"
+          size="small"
+          @click="workflowRunDrawerVisible = true"
+        >
+          {{ $t('views.finance.workflowRun.openLogLink') }}
+        </el-button>
       </div>
 
       <!-- Failed state -->
@@ -127,9 +138,18 @@
           <p class="finance-materials-detail__error-msg">
             {{ task.error_message || '-' }}
           </p>
-          <el-button v-if="canEdit" type="primary" @click="onReparse">
-            {{ $t('views.finance.materials.detail.retry') }}
-          </el-button>
+          <div style="display: flex; gap: 8px">
+            <el-button v-if="canEdit" type="primary" @click="onRetryLastStep">
+              {{ $t('views.finance.materials.detail.retry') }}
+            </el-button>
+            <el-button
+              link
+              type="primary"
+              @click="workflowRunDrawerVisible = true"
+            >
+              {{ $t('views.finance.workflowRun.openLogLink') }}
+            </el-button>
+          </div>
         </el-card>
       </div>
 
@@ -465,6 +485,15 @@
       :project-name="projectName"
       @sent="onSent"
     />
+
+    <!-- Workflow run drawer (Gate 7 Track B) -->
+    <WorkflowRunDrawer
+      v-if="task"
+      v-model:visible="workflowRunDrawerVisible"
+      :workspace-id="workspaceId"
+      target-type="MATERIALS_TASK"
+      :target-id="task.id"
+    />
   </div>
 </template>
 
@@ -489,6 +518,7 @@ import type {
 } from '@/api/finance/type'
 import SensitivityBadge from '@/components/sensitivity-badge/index.vue'
 import SendMaterialsDialog from './components/SendMaterialsDialog.vue'
+import WorkflowRunDrawer from '../components/WorkflowRunDrawer.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -507,6 +537,9 @@ const rejectFormRef = ref<FormInstance>()
 const rejectForm = ref({ comment: '' })
 const manualPickerVisible = ref(false)
 const pickerKeyword = ref('')
+// Gate 7 Track B: workflow-run drawer + per-step progress.
+const workflowRunDrawerVisible = ref(false)
+const workspaceId = computed<string>(() => String(user.getWorkspaceId() || ''))
 
 const TRANSIENT: MaterialsTaskStatus[] = ['parsing', 'matching']
 
@@ -770,6 +803,34 @@ const onPack = async () => {
   if (!wid || !task.value) return
   await store.triggerPack(wid, task.value.id)
   MsgSuccess(t('views.finance.materials.detail.packSuccess'))
+}
+
+/**
+ * Gate 7 Track B: retry whichever step failed. We can't infer the exact
+ * failing step from `error_message` alone, so use the persisted state:
+ *  - no parsed_items  → retry parse
+ *  - parsed_items but no matched_documents → retry match
+ *  - selected_documents but no zip_oss_key → retry pack
+ *  - default → retry parse (safest restart)
+ */
+const onRetryLastStep = async () => {
+  const wid = user.getWorkspaceId()
+  if (!wid || !task.value) return
+  const t1 = task.value
+  if (!t1.parsed_items || t1.parsed_items.length === 0) {
+    await store.triggerParse(wid, t1.id)
+  } else if (!t1.matched_documents || t1.matched_documents.length === 0) {
+    await store.triggerMatch(wid, t1.id)
+  } else if (
+    t1.selected_documents &&
+    t1.selected_documents.length > 0 &&
+    !t1.zip_oss_key
+  ) {
+    await store.triggerPack(wid, t1.id)
+  } else {
+    await store.triggerParse(wid, t1.id)
+  }
+  store.pollUntilStatusStable(wid, t1.id).catch(() => undefined)
 }
 
 const onSubmit = async () => {
