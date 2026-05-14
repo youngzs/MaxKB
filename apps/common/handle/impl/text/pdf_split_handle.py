@@ -312,6 +312,8 @@ class PdfSplitHandle(BaseSplitHandle):
 
         # 创建存储章节内容的数组
         chapters = []
+        # 累计真实抽到的正文长度（不含 fallback 成 title 的占位），用于判断是否为扫描版
+        total_real_chapter_text_len = 0
 
         # 遍历目录并按章节提取文本
         for i, entry in enumerate(toc):
@@ -351,6 +353,7 @@ class PdfSplitHandle(BaseSplitHandle):
 
             # Null characters are not allowed.
             chapter_text = chapter_text.replace("\0", "")
+            total_real_chapter_text_len += len(chapter_text.strip())
             # 限制标题长度
             real_chapter_title = chapter_title[:256]
             # 限制章节内容长度
@@ -366,6 +369,16 @@ class PdfSplitHandle(BaseSplitHandle):
                     }
                 )
             # 保存章节内容和章节标题
+
+        # 扫描版 PDF 即便带大纲，每章 extract_page_text 也几乎抽不到字。
+        # 此时降级到 handle_pdf_content，让 OCR fallback 有机会跑。
+        if total_real_chapter_text_len < _OCR_PAGE_TEXT_THRESHOLD * max(1, len(toc)):
+            maxkb_logger.info(
+                f"PDF TOC produced near-empty chapters "
+                f"(total {total_real_chapter_text_len} chars over {len(toc)} entries); "
+                f"falling back to full-page extraction so OCR can run."
+            )
+            return None
         return chapters
 
     @staticmethod
@@ -378,6 +391,8 @@ class PdfSplitHandle(BaseSplitHandle):
         toc_start_page = -1
         page_content = ""
         handle_pre_toc = True
+        # 累计真实抽到的章节正文长度，用于判断扫描版降级
+        total_real_chapter_text_len = 0
         # 遍历 PDF 的每一页，查找带有目录链接的页
         for page_num, page in enumerate(doc.pages):
             links = PdfSplitHandle.get_internal_links(doc, page)
@@ -435,6 +450,7 @@ class PdfSplitHandle(BaseSplitHandle):
 
                 # Null characters are not allowed.
                 chapter_text = chapter_text.replace("\0", "")
+                total_real_chapter_text_len += len(chapter_text.strip())
 
                 # 限制章节内容长度
                 if 0 < limit < len(chapter_text):
@@ -480,6 +496,16 @@ class PdfSplitHandle(BaseSplitHandle):
                 page_content = page_content.strip()
                 pre_toc = split_model.parse(page_content)
             chapters = pre_toc + chapters
+
+        # 扫描版 PDF 即便有内部跳转链接，extract_page_text 也几乎抽不到字。
+        # 任何 chapter 都接近空时降级到 handle_pdf_content 走 OCR。
+        if chapters and total_real_chapter_text_len < _OCR_PAGE_TEXT_THRESHOLD * len(chapters):
+            maxkb_logger.info(
+                f"PDF internal-links produced near-empty chapters "
+                f"({total_real_chapter_text_len} chars over {len(chapters)} entries); "
+                f"falling back to full-page extraction so OCR can run."
+            )
+            return None
         return chapters
 
     @staticmethod
