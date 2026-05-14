@@ -56,7 +56,7 @@ class DocumentTemplateUpdateSerializer(serializers.Serializer):
 
 class DocumentTemplateOutputSerializer(serializers.ModelSerializer):
     id = serializers.UUIDField(format='hex_verbose')
-    workspace_id = serializers.UUIDField(format='hex_verbose')
+    workspace_id = serializers.CharField(max_length=64)
     created_by = serializers.UUIDField(format='hex_verbose')
 
     class Meta:

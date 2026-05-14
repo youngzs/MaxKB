@@ -11,7 +11,7 @@ from finance.models import FinanceAuditLog
 
 class FinanceAuditLogOutputSerializer(serializers.ModelSerializer):
     id = serializers.UUIDField(format='hex_verbose')
-    workspace_id = serializers.UUIDField(format='hex_verbose')
+    workspace_id = serializers.CharField(max_length=64)
     actor_id = serializers.UUIDField(format='hex_verbose')
     target_id = serializers.UUIDField(format='hex_verbose', allow_null=True)
 

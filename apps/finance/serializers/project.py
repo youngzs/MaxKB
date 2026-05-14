@@ -45,7 +45,7 @@ class FinanceProjectOutputSerializer(serializers.ModelSerializer):
     """Read-only payload returned by every Finance Project endpoint."""
 
     id = serializers.UUIDField(format='hex_verbose')
-    workspace_id = serializers.UUIDField(format='hex_verbose')
+    workspace_id = serializers.CharField(max_length=64)
     created_by = serializers.UUIDField(format='hex_verbose')
 
     class Meta:

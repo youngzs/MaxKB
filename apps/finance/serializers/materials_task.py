@@ -58,7 +58,7 @@ class MaterialsTaskPackSerializer(serializers.Serializer):
 
 class MaterialsTaskOutputSerializer(serializers.ModelSerializer):
     id = serializers.UUIDField(format='hex_verbose')
-    workspace_id = serializers.UUIDField(format='hex_verbose')
+    workspace_id = serializers.CharField(max_length=64)
     project_id = serializers.UUIDField(format='hex_verbose')
     reviewer_id = serializers.UUIDField(format='hex_verbose', allow_null=True)
     created_by = serializers.UUIDField(format='hex_verbose')

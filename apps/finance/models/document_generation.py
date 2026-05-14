@@ -25,7 +25,7 @@ class DocumentGeneration(models.Model):
     id = models.UUIDField(
         primary_key=True, default=uuid.uuid7, editable=False, verbose_name='主键id'
     )
-    workspace_id = models.UUIDField(db_index=True, verbose_name='工作空间id')
+    workspace_id = models.CharField(max_length=64, db_index=True, verbose_name='工作空间id')
     project_id = models.UUIDField(db_index=True, verbose_name='融资项目id')
     template_id = models.UUIDField(db_index=True, verbose_name='模板id')
     template_version_snapshot = models.PositiveIntegerField(

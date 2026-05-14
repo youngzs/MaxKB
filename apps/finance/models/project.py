@@ -45,7 +45,7 @@ class FinanceProject(models.Model):
     """
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid7, editable=False, verbose_name='主键id')
-    workspace_id = models.UUIDField(verbose_name='工作空间id', db_index=True)
+    workspace_id = models.CharField(max_length=64, db_index=True, verbose_name='工作空间id')
     name = models.CharField(max_length=200, verbose_name='项目名称')
     code = models.CharField(max_length=64, blank=True, default='', verbose_name='项目编码')
     project_type = models.CharField(

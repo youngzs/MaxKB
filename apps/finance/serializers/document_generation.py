@@ -17,7 +17,7 @@ class DocumentGenerationCreateSerializer(serializers.Serializer):
 
 class DocumentGenerationOutputSerializer(serializers.ModelSerializer):
     id = serializers.UUIDField(format='hex_verbose')
-    workspace_id = serializers.UUIDField(format='hex_verbose')
+    workspace_id = serializers.CharField(max_length=64)
     project_id = serializers.UUIDField(format='hex_verbose')
     template_id = serializers.UUIDField(format='hex_verbose')
     workflow_run_id = serializers.UUIDField(format='hex_verbose', allow_null=True)

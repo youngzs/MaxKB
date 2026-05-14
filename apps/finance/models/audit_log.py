@@ -34,7 +34,7 @@ class FinanceAuditAction(models.TextChoices):
 
 class FinanceAuditLog(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid7, editable=False, verbose_name='主键id')
-    workspace_id = models.UUIDField(verbose_name='工作空间id', db_index=True)
+    workspace_id = models.CharField(max_length=64, db_index=True, verbose_name='工作空间id')
     actor_id = models.UUIDField(verbose_name='操作人id')
     target_type = models.CharField(
         max_length=32,

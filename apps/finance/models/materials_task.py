@@ -51,7 +51,7 @@ class MaterialsTask(models.Model):
     id = models.UUIDField(
         primary_key=True, default=uuid.uuid7, editable=False, verbose_name='主键id'
     )
-    workspace_id = models.UUIDField(db_index=True, verbose_name='工作空间id')
+    workspace_id = models.CharField(max_length=64, db_index=True, verbose_name='工作空间id')
     project_id = models.UUIDField(db_index=True, verbose_name='融资项目id')
     title = models.CharField(max_length=200, verbose_name='任务标题')
     requirement_text = models.TextField(
