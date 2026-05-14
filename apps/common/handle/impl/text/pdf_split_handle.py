@@ -22,7 +22,82 @@ from django.utils.translation import gettext_lazy as _
 from common.handle.base_split_handle import BaseSplitHandle
 from common.handle.impl.ocr import OcrConfigError, get_ocr_provider
 from common.utils.logger import maxkb_logger
+from common.utils.markdown_table import chunk_markdown_table
 from common.utils.split_model import SplitModel, smart_split_paragraph
+
+# 识别 Markdown 表格行：以 | 开头、以 | 结尾的非空行（允许首尾空白）
+_MD_TABLE_ROW_RE = re.compile(r'^\s*\|.*\|\s*$')
+# 识别 Markdown 表格的分隔行：| --- | --- | 形式（允许 :--- / ---: 对齐写法）
+_MD_TABLE_SEP_RE = re.compile(r'^\s*\|(?:\s*:?-{1,}:?\s*\|)+\s*$')
+
+
+def _parse_md_table_row(line: str) -> list:
+    """把一行 Markdown 表格行拆成单元格列表。
+    去掉首尾的 | 后按未转义的 | 分割；\\| 还原成字面量 |。"""
+    s = line.strip()
+    if s.startswith('|'):
+        s = s[1:]
+    if s.endswith('|'):
+        s = s[:-1]
+    # 按未转义的 | 分割（前面不是反斜杠）
+    parts = re.split(r'(?<!\\)\|', s)
+    return [p.strip().replace('\\|', '|') for p in parts]
+
+
+def _split_text_preserving_md_tables(text: str, split_model: 'SplitModel') -> list:
+    """拆分文本，但把其中的 Markdown 表格块整体抽出来做表格感知分块。
+
+    OCR 后的页面文本里如果含有 Markdown 表格（连续的 | ... | 行 + |---| 分隔行），
+    直接喂给通用 split_model 会把表格的行切碎、丢掉表头上下文。这里：
+      - 逐行扫描，识别出「表头行 + 分隔行 + 若干数据行」构成的表格块
+      - 表格块用 chunk_markdown_table 分块，每块都带表头（全局视图）
+      - 表格块之间的普通文本仍走原有的 split_model.parse
+    非表格 PDF 不会命中任何表格块，等价于原行为。
+    """
+    lines = text.split('\n')
+    paragraphs = []
+    buffer_lines = []  # 累积的非表格文本
+
+    def flush_text():
+        if not buffer_lines:
+            return
+        chunk_text = '\n'.join(buffer_lines).strip()
+        buffer_lines.clear()
+        if chunk_text:
+            paragraphs.extend(split_model.parse(chunk_text))
+
+    i = 0
+    n = len(lines)
+    while i < n:
+        line = lines[i]
+        # 表格块起点：当前行是表格行，且下一行是分隔行
+        if (
+            _MD_TABLE_ROW_RE.match(line)
+            and i + 1 < n
+            and _MD_TABLE_SEP_RE.match(lines[i + 1])
+        ):
+            header_cells = _parse_md_table_row(line)
+            j = i + 2
+            data_rows = []
+            while j < n and _MD_TABLE_ROW_RE.match(lines[j]) and not _MD_TABLE_SEP_RE.match(lines[j]):
+                data_rows.append(_parse_md_table_row(lines[j]))
+                j += 1
+            # 表格块结束，先收口前面的普通文本
+            flush_text()
+            if data_rows:
+                for chunk in chunk_markdown_table(header_cells, data_rows):
+                    paragraphs.append({'title': '', 'content': chunk})
+            else:
+                # 只有表头没有数据行，当普通文本处理
+                buffer_lines.append(line)
+                buffer_lines.append(lines[i + 1])
+            i = j
+            continue
+        buffer_lines.append(line)
+        i += 1
+
+    flush_text()
+    return paragraphs
 
 # 当 pypdf 从一页抽到的文字短于该阈值时，认为是扫描页，尝试 OCR fallback
 _OCR_PAGE_TEXT_THRESHOLD = 10
@@ -120,7 +195,13 @@ class PdfSplitHandle(BaseSplitHandle):
             # 处理完后可以删除临时文件
             os.remove(temp_file_path)
 
-        return {"name": file.name, "content": split_model.parse(content)}
+        # OCR 后的页面文本可能含 Markdown 表格（见 DEFAULT_OCR_PROMPT）。
+        # 表格块走表格感知分块（每块带表头），其余文本仍走通用 split_model。
+        # 纯文本 PDF 不含表格块时等价于原来的 split_model.parse(content)。
+        return {
+            "name": file.name,
+            "content": _split_text_preserving_md_tables(content, split_model),
+        }
 
     @staticmethod
     def _ocr_pdf_page(pdf_path, page_num, ocr_provider):

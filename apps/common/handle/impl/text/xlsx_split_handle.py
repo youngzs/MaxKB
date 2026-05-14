@@ -16,8 +16,11 @@ from openpyxl import load_workbook
 from common.handle.base_split_handle import BaseSplitHandle
 from common.handle.impl.common_handle import xlsx_embed_cells_images
 from common.handle.impl.text.excel_kv_common import (
+    get_excel_ingest_mode,
     make_kv_paragraph,
+    make_markdown_table_paragraphs,
     normalize_headers,
+    normalize_row_values,
 )
 from common.utils.logger import maxkb_logger
 
@@ -44,7 +47,11 @@ def _row_values_with_merge(sheet, row_idx: int, merged_ranges) -> list:
 
 
 def handle_sheet(file_name, sheet, image_dict, limit: int):
-    """按行 KV 序列化整张 sheet。每一非空行 → 一个 paragraph。
+    """序列化整张 sheet 为 paragraph 列表。
+
+    模式由 MAXKB_EXCEL_INGEST_MODE 控制：
+      - markdown（默认）：整张表 → 多个 Markdown 表格分块，每块都带表头（全局视图）
+      - keyvalue（旧行为）：每一非空行 → 一个 KV paragraph
 
     file_name 实际上是 sheet 内容描述用的"上下文名称"，
     在外层调用时已根据 sheet 数量决定是用文件名还是 sheet 名作为 context。
@@ -60,7 +67,25 @@ def handle_sheet(file_name, sheet, image_dict, limit: int):
         headers = normalize_headers(header_values)
         if not headers:
             return result
-        # 从第 2 行开始作为数据
+
+        mode = get_excel_ingest_mode()
+        if mode == 'markdown':
+            # Markdown 表格模式：以 sheet 名作为分块标题
+            rows = []
+            for row_idx in range(2, sheet.max_row + 1):
+                row_values = _row_values_with_merge(sheet, row_idx, merged_ranges)
+                rows.append(normalize_row_values(row_values, image_dict))
+            paragraphs.extend(
+                make_markdown_table_paragraphs(
+                    title=sheet.title,
+                    headers=headers,
+                    rows=rows,
+                    limit=limit,
+                )
+            )
+            return result
+
+        # keyvalue 模式（旧行为，fallback）：从第 2 行开始，每行一个 paragraph
         for row_idx in range(2, sheet.max_row + 1):
             row_values = _row_values_with_merge(sheet, row_idx, merged_ranges)
             paragraph = make_kv_paragraph(
@@ -123,7 +148,7 @@ class XlsxSplitHandle(BaseSplitHandle):
             try:
                 image_dict: dict = xlsx_embed_cells_images(io.BytesIO(buffer))
                 save_image([item for item in image_dict.values()])
-            except Exception as e:
+            except Exception:
                 image_dict = {}
             worksheets = workbook.worksheets
             worksheets_size = len(worksheets)

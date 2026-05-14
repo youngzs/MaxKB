@@ -16,7 +16,9 @@ from charset_normalizer import detect
 
 from common.handle.base_split_handle import BaseSplitHandle
 from common.handle.impl.text.excel_kv_common import (
+    get_excel_ingest_mode,
     make_kv_paragraph,
+    make_markdown_table_paragraphs,
     normalize_headers,
 )
 from common.utils.logger import maxkb_logger
@@ -40,7 +42,22 @@ class CsvSplitHandle(BaseSplitHandle):
             headers = normalize_headers(header_row)
             if not headers:
                 return result
-            # CSV 没有 sheet 概念，sheet_name=None
+
+            mode = get_excel_ingest_mode()
+            if mode == 'markdown':
+                # Markdown 表格模式：以文件名作为分块标题
+                rows = [row for row in reader]
+                paragraphs.extend(
+                    make_markdown_table_paragraphs(
+                        title=file_name,
+                        headers=headers,
+                        rows=rows,
+                        limit=limit,
+                    )
+                )
+                return result
+
+            # keyvalue 模式（旧行为，fallback）：CSV 没有 sheet 概念，sheet_name=None
             for row_idx, row in enumerate(reader, start=2):
                 paragraph = make_kv_paragraph(
                     file_name=file_name,

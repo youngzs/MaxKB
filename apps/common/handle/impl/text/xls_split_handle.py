@@ -6,7 +6,6 @@
     @date：2024/5/21 14:59
     @desc:
 """
-import datetime
 import traceback
 from typing import List
 
@@ -15,8 +14,11 @@ from xlrd.xldate import xldate_as_datetime
 
 from common.handle.base_split_handle import BaseSplitHandle
 from common.handle.impl.text.excel_kv_common import (
+    get_excel_ingest_mode,
     make_kv_paragraph,
+    make_markdown_table_paragraphs,
     normalize_headers,
+    normalize_row_values,
 )
 from common.utils.logger import maxkb_logger
 
@@ -54,6 +56,25 @@ def handle_sheet(file_name, workbook, sheet, limit: int):
         headers = normalize_headers(header_values)
         if not headers:
             return result
+
+        mode = get_excel_ingest_mode()
+        if mode == 'markdown':
+            # Markdown 表格模式：以 sheet 名作为分块标题
+            rows = []
+            for r in range(1, sheet.nrows):
+                row_values = [_convert_xlrd_value(workbook, sheet, r, c) for c in range(sheet.ncols)]
+                rows.append(normalize_row_values(row_values))
+            paragraphs.extend(
+                make_markdown_table_paragraphs(
+                    title=sheet.name,
+                    headers=headers,
+                    rows=rows,
+                    limit=limit,
+                )
+            )
+            return result
+
+        # keyvalue 模式（旧行为，fallback）
         for r in range(1, sheet.nrows):
             row_values = [_convert_xlrd_value(workbook, sheet, r, c) for c in range(sheet.ncols)]
             paragraph = make_kv_paragraph(
