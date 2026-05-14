@@ -72,7 +72,7 @@
                       class="finance-workflow-run-detail__node"
                     >
                       <el-tag
-                        :type="statusTagType(node.status)"
+                        :type="nodeStatusTagType(node.status)"
                         size="small"
                         effect="plain"
                         disable-transitions
@@ -417,6 +417,13 @@ const summaryEntries = (
           : String(v),
   }))
 }
+
+// Tag colour for a node status. Node statuses come from a free-form
+// payload, so this tolerates undefined / unknown strings (falls through
+// to the neutral default) — unlike statusTagType which is typed to the
+// closed WorkflowRunStatus union used by the run rows themselves.
+const nodeStatusTagType = (s: string | undefined) =>
+  s ? statusTagType(s as WorkflowRunStatus) : ''
 
 // True when the payload carries anything worth expanding for. An empty
 // payload (or one with no node / summary detail) shows the graceful

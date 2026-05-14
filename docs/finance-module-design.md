@@ -684,4 +684,131 @@ ui/src/views/finance/
 | 版本 | 日期 | 变更 | 作者 |
 | --- | --- | --- | --- |
 | v0.1 | 2026-05-13 | 初版，Gate 1 启动同步落地：架构 / 数据模型 / API / 权限 / 6-Gate 路线图 / 风险 / 安全清单 | Finance Workspace 小组 |
+| v0.2 | 2026-05-13 | Gate 5 落地：真实 LLM 接入（requirement_parser / summary_generator / ai-fill 三个 AI 服务接 `models_provider`，无模型时降级占位）；SMTP 发送闭环（凭证 workspace 级加密存储 + 二次确认 + 强制审计）；预置工作流安装命令 `install_finance_workflows`；审计日志管理页 | Finance Workspace 小组 |
+| v0.3 | 2026-05-14 | Gate 6-8 落地：后端加固（敏感度 PATCH / 审计 CSV 导出 / 性能日志）；`/healthz` 真实探针 + 签名 URL 公开下载；Gate 7 文档模板生成 + xlsx 导出 + `system-info` 诊断端点；工作流运行时经 Celery 落地（`WorkflowRun` 跟踪表 + 节点级进度 payload）；Gate 8 卡死任务恢复（retry / cancel）+ AI 状态提示横幅 + 端到端冒烟测试脚本。新增 §14 实施进度、§15 运维手册 | Finance Workspace 小组 |
+
+---
+
+## 十四、实施进度（Gate 1-8）
+
+> 本节记录截至 v0.3 的实际落地进度。原 §9 的 6-Gate 路线图为启动时的规划；
+> 实际执行中按 Track（A 后端 / B 流程 / C 前端或脚本）并行推进，并在 Gate 7-8
+> 追加了工作流运行时与运维能力，因此实际 Gate 数扩展为 8。
+
+| Gate | 状态 | 关键交付物 | 落地日期 |
+| --- | --- | --- | --- |
+| Gate 1 — 骨架 & 菜单 | ✅完成 | `apps/finance/` Django app 骨架；前端 `ui/src/views/finance/` 菜单与路由；`/ping` 健康探针；中间件 bypass | 2026-05-12 |
+| Gate 2 — 融资项目库 & 数据底座 | ✅完成 | `FinanceProject` 模型 + workspace 级 CRUD API；前端项目列表/详情页；`FinanceAuditLog` 审计底座 | 2026-05-12 |
+| Gate 3 — 流程文档 MVP | ✅完成 | `DocumentTemplate` / `DocumentGeneration` 模型；模板上传/占位符元数据；docx 渲染节点；前端模板库 + 生成向导 | 2026-05-13 |
+| Gate 4 — 材料整理 MVP | ✅完成 | `MaterialsTask` 模型与状态机；需求解析 + 知识库匹配（敏感度感知）；zip 打包节点；前端材料工作台 | 2026-05-13 |
+| Gate 5 — 审核 & 发送闭环 | ✅完成 | 真实 LLM 接入（`finance/service/llm.py`，无模型降级占位）；SMTP 凭证加密存储 + 发送闭环 + 二次确认；预置工作流安装命令；审计日志管理页 | 2026-05-13 |
+| Gate 6 — 打磨 & 上线加固 | ✅完成 | 后端加固（敏感度 PATCH、审计 CSV 导出、`service/perf.py` 慢调用日志）；`/healthz` 真实 DB+cache 探针；签名 URL 公开下载；前端 UX 打磨（AI 填充、敏感度编辑、空状态） | 2026-05-13 |
+| Gate 7 — 模板生成 & 运行时 | ✅完成 | 模板生成后端 + xlsx 导出 + 工作流安装校验；`system-info` 管理诊断端点；工作流运行时经 Celery 落地（`WorkflowRun` 跟踪表，记录 task / status / duration / retry / payload）；前端富文本邮件、移动端适配、JSON 高亮、空状态 | 2026-05-14 |
+| Gate 8 — 任务恢复 & 可见性 | ✅完成 | Track A：`workflow_executor` + 节点级 payload；Track B：卡死任务恢复 `workflow_recovery.py` + retry/cancel 端点；Track C：`ai-status` 端点 + `FinanceAiBanner` 降级提示横幅、`WorkflowRunDrawer` 节点级进度展开、`apps/finance/tests/smoke_test.py` 冒烟脚本 | 2026-05-14 |
+
+---
+
+## 十五、运维手册
+
+面向运维 / 值班同学的一线操作手册。所有命令默认在官方镜像容器内执行
+（`docker exec -it maxkb bash`），路径以容器内 `/opt/maxkb-app` 为准。
+
+### 15.1 部署（本地构建 → 推送 → 容器内迁移 → 重启）
+
+沿用本项目一直使用的部署模式：
+
+```bash
+# 1. 本地：构建前端（admin + chat 两个入口）
+cd ui && npm run build && cd ..
+
+# 2. 本地 → 服务器：把改动同步上去（后端 apps/ + 前端 ui/dist）
+scp -r apps   <user>@<host>:/tmp/maxkb-deploy/apps
+scp -r ui/dist <user>@<host>:/tmp/maxkb-deploy/ui-dist
+
+# 3. 服务器：把文件 docker cp 进容器
+docker cp /tmp/maxkb-deploy/apps/finance        maxkb:/opt/maxkb-app/apps/finance
+docker cp /tmp/maxkb-deploy/ui-dist/.           maxkb:/opt/maxkb-app/apps/maxkb/static/ui
+
+# 4. 容器内：跑迁移 + 收集静态资源
+docker exec maxkb python /opt/maxkb-app/main.py upgrade_db
+docker exec maxkb python /opt/maxkb-app/main.py collect_static
+
+# 5. 重启服务
+docker restart maxkb
+```
+
+> 注意：finance 模块的迁移文件在 `apps/finance/migrations/`，`upgrade_db`
+> 会自动识别。若仅改前端可跳过步骤 4 的 `upgrade_db`。
+
+### 15.2 运行冒烟测试
+
+部署后用 `apps/finance/tests/smoke_test.py` 做一次一键健康验证。该脚本
+**仅依赖标准库**（`urllib`），可直接在容器内运行：
+
+```bash
+docker exec maxkb python /opt/maxkb-app/apps/finance/tests/smoke_test.py \
+    --base-url http://127.0.0.1:8080 \
+    --token <admin-token>
+```
+
+覆盖 8 项检查：`/ping`、`/healthz`、`/ai-status`、`/system-info`、项目
+创建 / 列表 / 删除、`/workflow-run` 列表。每项打印一行 `PASS` / `FAIL` /
+`SKIP`，全部通过时退出码 0，否则 1（可直接接入 CI / 监控）。
+
+可选参数：`--workspace <id>`（默认 `default`）、`--admin-path <path>`
+（默认 `/admin`，需与 `ADMIN_PATH` 配置一致）。
+
+### 15.3 检查 Celery worker 健康
+
+工作流运行时（解析 / 匹配 / 打包 / 生成）走 Celery 异步执行，必须确认
+worker 在跑：
+
+```bash
+# worker 进程是否存活
+docker exec maxkb ps aux | grep -i celery
+
+# 队列与已注册任务（应能看到 finance.tasks.* 任务）
+docker exec maxkb celery -A maxkb inspect registered
+docker exec maxkb celery -A maxkb inspect active
+
+# 若 worker 未启动，官方镜像内由 start-all.sh 拉起；手动启动：
+docker exec -d maxkb python /opt/maxkb-app/main.py start task
+```
+
+辅助手段：finance 前端「运行日志」抽屉（`WorkflowRunDrawer`）会列出
+每次 Celery 调用的 status / duration / retry；超过 15 分钟仍在
+`queued` / `running` 的行会标记「可能已卡住」，可在该抽屉直接 retry /
+cancel。后端 `workflow_recovery.py` 也提供卡死任务的批量恢复入口。
+
+### 15.4 手动安装 / 重装预置工作流
+
+预置工作流（材料解析、文档生成等内部 `WORK_FLOW` 类型 Application）通过
+管理命令安装，幂等可重复执行：
+
+```bash
+# 安装 / 升级全部预置工作流（按 slug 确定性 id，重复执行为原地更新）
+docker exec maxkb python /opt/maxkb-app/apps/manage.py install_finance_workflows
+
+# 预演，不写库
+docker exec maxkb python /opt/maxkb-app/apps/manage.py install_finance_workflows --dry-run
+```
+
+安装结果可通过 `system-info` 端点的 `workflows_installed` 字段核对
+（每个预置工作流的 `installed` / `node_count` / `version`）。
+
+### 15.5 已知限制
+
+- **工作流引擎接线**：Gate 7-8 已把运行时迁到 Celery 并落地 `WorkflowRun`
+  跟踪表，节点级进度 payload 由 Gate 8 Track A 写入。部分 step node 的
+  workspace 级参数（知识库 id、模型 id）仍在运行时注入，预置 JSON 中为
+  占位空值——这是有意设计，单份内部工作流服务所有 workspace。
+- **AI 功能降级**：workspace 未配置 LLM 模型时，需求解析 / 概要生成 /
+  ai-fill 会静默降级为确定性占位内容。前端 `FinanceAiBanner` 会在材料 /
+  文档 / 模板列表页顶部给出提示横幅；`/ai-status` 端点可编程查询降级状态。
+  embedding 模型缺失只影响知识库匹配质量，不触发功能降级。
+- **P2 / P3 功能待排期**：可行性初判（§1.2 第 4 项）与进度归集（第 5 项）
+  仍为规划中（菜单已占位，落地待后续 Gate）。资讯推送同为后续迭代项。
+- **`system-info` 权限**：该诊断端点仅 ADMIN 角色可见（会泄漏跨 workspace
+  的依赖版本与全局模型状态），workspace 管理员不可见——这是有意的租户
+  隔离设计。
 
