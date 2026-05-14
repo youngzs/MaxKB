@@ -1,0 +1,180 @@
+{
+  "_comment": "Gate 5 Track C preset workflow: finance document generation. Flow: start -> search-knowledge -> ai-chat (fill long_text placeholders) -> docx-render -> end. Placeholders prefixed `${workspace.}` are filled at install time by management/commands/install_finance_workflows.py.",
+  "name": "finance.document_generator",
+  "slug": "__internal_document_generator",
+  "version": "1.0.0",
+  "description": "项目背景 → AI 填充长文本占位符 → docx 渲染。供 finance 文档生成页内部使用。",
+  "nodes": [
+    {
+      "id": "base-node",
+      "type": "base-node",
+      "x": 360,
+      "y": 100,
+      "properties": {
+        "config": {},
+        "height": 240,
+        "stepName": "基本信息",
+        "node_data": {
+          "desc": "财务文档生成预设流程",
+          "name": "finance_document_generator",
+          "prologue": ""
+        },
+        "input_field_list": []
+      }
+    },
+    {
+      "id": "start-node",
+      "type": "start-node",
+      "x": 360,
+      "y": 420,
+      "properties": {
+        "config": {
+          "fields": [
+            {"label": "项目id", "value": "project_id"},
+            {"label": "模板id", "value": "template_id"},
+            {"label": "待填占位符列表", "value": "placeholder_keys"}
+          ],
+          "globalFields": [
+            {"label": "当前时间", "value": "time"}
+          ]
+        },
+        "fields": [
+          {"label": "项目id", "value": "project_id"},
+          {"label": "模板id", "value": "template_id"},
+          {"label": "待填占位符列表", "value": "placeholder_keys"}
+        ],
+        "height": 240,
+        "stepName": "开始",
+        "globalFields": [
+          {"label": "当前时间", "value": "time"}
+        ]
+      }
+    },
+    {
+      "id": "search-knowledge-node-1",
+      "type": "search-knowledge-node",
+      "x": 720,
+      "y": 420,
+      "properties": {
+        "config": {
+          "fields": [
+            {"label": "检索结果的分段列表", "value": "paragraph_list"},
+            {"label": "检索结果", "value": "data"}
+          ]
+        },
+        "height": 480,
+        "stepName": "检索项目背景",
+        "node_data": {
+          "knowledge_id_list": [],
+          "knowledge_setting": {
+            "top_n": 5,
+            "similarity": 0.6,
+            "search_mode": "blend",
+            "max_paragraph_char_number": 4000
+          },
+          "question_reference_address": ["start-node", "placeholder_keys"],
+          "show_knowledge": false,
+          "search_scope_type": "custom",
+          "search_scope_source": "knowledge",
+          "search_scope_reference": [],
+          "_install_note": "knowledge_id_list 由 install_finance_workflows 在装配时根据 FinanceProject.knowledge_base_ids 填充"
+        }
+      }
+    },
+    {
+      "id": "ai-chat-node-1",
+      "type": "ai-chat-node",
+      "x": 1080,
+      "y": 420,
+      "properties": {
+        "config": {
+          "fields": [
+            {"label": "AI 回答内容", "value": "answer"}
+          ]
+        },
+        "height": 540,
+        "stepName": "AI 填充长文本占位符",
+        "node_data": {
+          "prompt": "你是一名财务文档撰写助手。请基于以下项目背景，逐项填写文档的长文本占位符。\n\n【项目背景】\n{{检索项目背景.data}}\n\n【待填占位符（key:label:hint）】\n{{开始.placeholder_keys}}\n\n要求：\n1. 仅输出 JSON 对象，键为占位符 key，值为对应的填充文本。\n2. 不得编造与项目背景无关的事实；信息不足时请填写 \"待补充\"。\n3. 每个长文本不超过 800 字，语言保持中文且与上下文一致。",
+          "system": "你是 MaxKB 财务工作台的文档助手，输出务必严谨、可追溯。",
+          "model_id": "",
+          "dialogue_number": 0,
+          "is_result": false,
+          "_install_note": "model_id 由 install_finance_workflows 在装配时使用 workspace 默认模型填充"
+        }
+      }
+    },
+    {
+      "id": "docx-render-node-1",
+      "type": "docx-render-node",
+      "x": 1440,
+      "y": 420,
+      "properties": {
+        "config": {
+          "fields": [
+            {"label": "输出文件key", "value": "output_oss_key"},
+            {"label": "错误信息", "value": "error"}
+          ]
+        },
+        "height": 360,
+        "stepName": "渲染 docx",
+        "node_data": {
+          "template_oss_key_reference": ["start-node", "template_id"],
+          "placeholder_values_reference": ["ai-chat-node-1", "answer"],
+          "output_filename": "finance_document.docx",
+          "is_result": true,
+          "_install_note": "实际执行时 workflow_manage 会读取上述 *_reference 字段，并把它们解析为节点输出值；后端 IDocxRenderNode 的 execute() 接收 placeholder_values=dict"
+        }
+      }
+    },
+    {
+      "id": "end-node",
+      "type": "end-node",
+      "x": 1800,
+      "y": 420,
+      "properties": {
+        "config": {},
+        "height": 200,
+        "stepName": "结束"
+      }
+    }
+  ],
+  "edges": [
+    {
+      "id": "edge-start-search",
+      "type": "app-edge",
+      "sourceNodeId": "start-node",
+      "targetNodeId": "search-knowledge-node-1",
+      "sourceAnchorId": "start-node_right",
+      "targetAnchorId": "search-knowledge-node-1_left",
+      "properties": {}
+    },
+    {
+      "id": "edge-search-chat",
+      "type": "app-edge",
+      "sourceNodeId": "search-knowledge-node-1",
+      "targetNodeId": "ai-chat-node-1",
+      "sourceAnchorId": "search-knowledge-node-1_right",
+      "targetAnchorId": "ai-chat-node-1_left",
+      "properties": {}
+    },
+    {
+      "id": "edge-chat-docx",
+      "type": "app-edge",
+      "sourceNodeId": "ai-chat-node-1",
+      "targetNodeId": "docx-render-node-1",
+      "sourceAnchorId": "ai-chat-node-1_right",
+      "targetAnchorId": "docx-render-node-1_left",
+      "properties": {}
+    },
+    {
+      "id": "edge-docx-end",
+      "type": "app-edge",
+      "sourceNodeId": "docx-render-node-1",
+      "targetNodeId": "end-node",
+      "sourceAnchorId": "docx-render-node-1_right",
+      "targetAnchorId": "end-node_left",
+      "properties": {}
+    }
+  ]
+}

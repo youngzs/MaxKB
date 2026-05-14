@@ -16,6 +16,8 @@ import chatUser from './chat-user'
 import operateLog from './operate-log'
 import shared from './shared'
 import trigger from './trigger'
+import chatEntry from './chat-entry'
+import finance from './finance'
 export default {
   login,
   model,
@@ -34,5 +36,7 @@ export default {
   chatUser,
   operateLog,
   shared,
-  trigger
+  trigger,
+  chatEntry,
+  finance,
 }

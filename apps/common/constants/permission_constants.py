@@ -100,6 +100,9 @@ class Group(Enum):
     KNOWLEDGE_FOLDER = "KNOWLEDGE_FOLDER"
     TOOL_FOLDER = "TOOL_FOLDER"
 
+    # 融资工作台 (Finance Workspace)
+    FINANCE = "FINANCE"
+
 
 class SystemGroup(Enum):
     """
@@ -194,6 +197,10 @@ class Operate(Enum):
     TRIGGER_DELETE = "READ+TRIGGER_DELETE"
     BATCH_DELETE = "READ+BATCH_DELETE"
     BATCH_MOVE = "READ+BATCH_MOVE"
+    # 融资工作台 (Finance Workspace) operations
+    REVIEW = "REVIEW"  # 复核
+    SEND = "SEND"  # 发送
+    TEMPLATE_MANAGE = "TEMPLATE_MANAGE"  # 模板管理
 
 
 class RoleGroup(Enum):
@@ -1924,6 +1931,30 @@ class PermissionConstants(Enum):
     OPERATION_LOG_CLEAR_POLICY = Permission(
         group=Group.OPERATION_LOG, operate=Operate.CLEAR_POLICY, role_list=[RoleConstants.ADMIN],
         parent_group=[SystemGroup.OPERATION_LOG]
+    )
+
+    # 融资工作台 (Finance Workspace) — role bindings:
+    # READ/EDIT: all workspace users (ADMIN, WORKSPACE_MANAGE, USER)
+    # REVIEW/SEND/TEMPLATE_MANAGE: managerial only (ADMIN, WORKSPACE_MANAGE)
+    FINANCE_READ = Permission(
+        group=Group.FINANCE, operate=Operate.READ,
+        role_list=[RoleConstants.ADMIN, RoleConstants.WORKSPACE_MANAGE, RoleConstants.USER],
+    )
+    FINANCE_EDIT = Permission(
+        group=Group.FINANCE, operate=Operate.EDIT,
+        role_list=[RoleConstants.ADMIN, RoleConstants.WORKSPACE_MANAGE, RoleConstants.USER],
+    )
+    FINANCE_REVIEW = Permission(
+        group=Group.FINANCE, operate=Operate.REVIEW,
+        role_list=[RoleConstants.ADMIN, RoleConstants.WORKSPACE_MANAGE],
+    )
+    FINANCE_SEND = Permission(
+        group=Group.FINANCE, operate=Operate.SEND,
+        role_list=[RoleConstants.ADMIN, RoleConstants.WORKSPACE_MANAGE],
+    )
+    FINANCE_TEMPLATE_MANAGE = Permission(
+        group=Group.FINANCE, operate=Operate.TEMPLATE_MANAGE,
+        role_list=[RoleConstants.ADMIN, RoleConstants.WORKSPACE_MANAGE],
     )
 
     def get_workspace_application_permission(self):

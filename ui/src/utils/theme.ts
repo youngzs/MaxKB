@@ -42,12 +42,14 @@ export const defaultSetting = {
 }
 
 export const defaultPlatformSetting = {
-  showUserManual: true,
+  // 默认隐藏「用户手册 / 论坛 / 项目」三个外链入口，避免私有部署引导用户去 MaxKB 官网。
+  // 管理员可在「系统设置 → 外观设置」中重新勾选并填入自有品牌链接。
+  showUserManual: false,
   userManualUrl: t('layout.userManualUrl'),
-  showForum: true,
+  showForum: false,
   forumUrl: t('layout.forumUrl'),
-  showProject: true,
-  projectUrl: 'https://github.com/1Panel-dev/MaxKB',
+  showProject: false,
+  projectUrl: '',
 }
 
 export function hexToRgba(hex?: string, alpha?: number) {

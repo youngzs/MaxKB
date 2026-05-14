@@ -543,10 +543,11 @@ const systemRouter = {
         parentName: 'system',
         sameRoute: 'setting',
         permission: [
+          // CE 版本通过自实现的 /display/* 后端开放外观设置，因此移除版本(EE/PE)限制
           new ComplexPermission(
             [RoleConst.ADMIN],
             [PermissionConst.APPEARANCE_SETTINGS_READ],
-            [EditionConst.IS_EE, EditionConst.IS_PE],
+            [],
             'OR',
           ),
           new ComplexPermission(
@@ -569,15 +570,37 @@ const systemRouter = {
             parentName: 'system',
             sameRoute: 'setting',
             permission: [
+              // 同上：CE 版本也允许进入外观设置页
               new ComplexPermission(
                 [RoleConst.ADMIN],
                 [PermissionConst.APPEARANCE_SETTINGS_READ],
-                [EditionConst.IS_EE, EditionConst.IS_PE],
+                [],
                 'OR',
               ),
             ],
           },
           component: () => import('@/views/system-setting/theme/index.vue'),
+        },
+        {
+          path: '/system/setting/ocr',
+          name: 'ocr',
+          meta: {
+            title: 'OCR 设置',
+            activeMenu: '/system',
+            parentPath: '/system',
+            parentName: 'system',
+            sameRoute: 'setting',
+            // OCR 设置复用「外观设置」的权限，避免新增权限项需要单独迁移
+            permission: [
+              new ComplexPermission(
+                [RoleConst.ADMIN],
+                [PermissionConst.APPEARANCE_SETTINGS_READ],
+                [],
+                'OR',
+              ),
+            ],
+          },
+          component: () => import('@/views/system-setting/ocr/index.vue'),
         },
         {
           path: '/system/authentication',

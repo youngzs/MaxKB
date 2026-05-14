@@ -40,6 +40,7 @@ from common.handle.impl.table.xlsx_parse_table_handle import XlsxParseTableHandl
 from common.handle.impl.text.csv_split_handle import CsvSplitHandle
 from common.handle.impl.text.doc_split_handle import DocSplitHandle
 from common.handle.impl.text.html_split_handle import HTMLSplitHandle
+from common.handle.impl.text.image_ocr_split_handle import ImageOcrSplitHandle
 from common.handle.impl.text.pdf_split_handle import PdfSplitHandle
 from common.handle.impl.text.text_split_handle import TextSplitHandle
 from common.handle.impl.text.xls_split_handle import XlsSplitHandle
@@ -72,6 +73,7 @@ split_handles = [
     XlsxSplitHandle(),
     XlsSplitHandle(),
     CsvSplitHandle(),
+    ImageOcrSplitHandle(),
     ZipSplitHandle(),
     default_split_handle
 ]
@@ -138,6 +140,12 @@ class DocumentEditInstanceSerializer(serializers.Serializer):
                                                         label=_('directly return similarity'))
 
     is_active = serializers.BooleanField(required=False, label=_('document is active'))
+
+    sensitivity_level = serializers.CharField(required=False, validators=[
+        validators.RegexValidator(regex=re.compile("^public|internal|confidential|secret$"),
+                                  message=_('Sensitivity level only supports public|internal|confidential|secret'),
+                                  code=500)
+    ], label=_('sensitivity level'))
 
     @staticmethod
     def get_meta_valid_map():
@@ -668,7 +676,8 @@ class DocumentSerializers(serializers.Serializer):
             _document = QuerySet(Document).get(id=self.data.get("document_id"))
             if with_valid:
                 DocumentEditInstanceSerializer(data=instance).is_valid(document=_document)
-            update_keys = ['name', 'is_active', 'hit_handling_method', 'directly_return_similarity', 'meta']
+            update_keys = ['name', 'is_active', 'hit_handling_method', 'directly_return_similarity', 'meta',
+                           'sensitivity_level']
             for update_key in update_keys:
                 if update_key in instance and instance.get(update_key) is not None:
                     _document.__setattr__(update_key, instance.get(update_key))
@@ -761,6 +770,18 @@ class DocumentSerializers(serializers.Serializer):
             except AlreadyQueued as e:
                 raise AppApiException(500, _('The task is being executed, please do not send it repeatedly.'))
 
+            # 点"向量化"时，对扫描版 PDF（段落为空 / 仅图片占位）补跑一次 OCR。
+            # 任务自身判断是否真的需要 OCR：已有正文的文档会被跳过，所以
+            # 对普通文本文档无副作用；OCR 完成后会自动重新 embedding。
+            try:
+                from knowledge.task.ocr import enqueue_ocr_if_pdf
+                enqueue_ocr_if_pdf(document_id)
+            except Exception as e:
+                from common.utils.logger import maxkb_logger
+                maxkb_logger.warning(
+                    f"refresh: failed to enqueue OCR for {document_id}: {e}"
+                )
+
         @staticmethod
         def get_workbook(data_dict, document_dict):
             # 创建工作簿对象
@@ -847,6 +868,18 @@ class DocumentSerializers(serializers.Serializer):
         def post_embedding(result, document_id, knowledge_id):
             DocumentSerializers.Operate(
                 data={'knowledge_id': knowledge_id, 'document_id': document_id}).refresh()
+            # 扫描版 PDF 同步路径不再跑 OCR（避免 nginx / gunicorn 超时），
+            # 改在 celery 后台对每份 PDF 文档跑一次 OCR fallback；
+            # 任务自身会判断是否真的需要 OCR，是否需要重新 embedding。
+            try:
+                from knowledge.task.ocr import enqueue_ocr_if_pdf
+                enqueue_ocr_if_pdf(document_id)
+            except Exception as e:
+                # OCR 是增强而非必备，落库已经完成，这里仅记日志。
+                from common.utils.logger import maxkb_logger
+                maxkb_logger.warning(
+                    f"post_embedding: failed to enqueue OCR for {document_id}: {e}"
+                )
             return result
 
         @post(post_function=post_embedding)

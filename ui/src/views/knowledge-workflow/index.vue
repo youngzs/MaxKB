@@ -192,7 +192,7 @@ import DropdownMenu from '@/components/workflow-dropdown-menu/index.vue'
 import ExecutionRecord from '@/views/knowledge-workflow/component/execution-record/ExecutionRecordDrawer.vue'
 import PublishHistory from '@/views/knowledge-workflow/component/PublishHistory.vue'
 import { isAppIcon, resetUrl } from '@/utils/common'
-import { MsgSuccess, MsgError, MsgConfirm } from '@/utils/message'
+import { MsgSuccess, MsgError, MsgConfirm, MsgAlert } from '@/utils/message'
 import { datetimeFormat } from '@/utils/time'
 import useStore from '@/stores'
 import { KnowledgeWorkFlowInstance } from '@/workflow/common/validate'
@@ -432,12 +432,7 @@ const importKnowledgeWorkflow = (file: any) => {
         })
         .catch((error: any) => {
           if (error.code === 400) {
-            MsgConfirm(t('common.tip'), t('views.application.tip.professionalMessage'), {
-              cancelButtonText: t('common.confirm'),
-              confirmButtonText: t('common.professional'),
-            }).then(() => {
-              window.open('https://maxkb.cn/pricing.html', '_blank')
-            })
+            MsgAlert(t('common.tip'), t('views.application.tip.professionalMessage'))
           }
         })
     })

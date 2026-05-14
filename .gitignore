@@ -183,7 +183,8 @@ apps/xpack
 data
 .dev
 poetry.lock
-uv.lock
+# uv.lock — DO NOT manually edit; intentionally committed for CI reproducibility (Gate 6 Track C).
+# Regenerate via `uv lock` when adding / bumping dependencies in pyproject.toml.
 apps/models_provider/impl/*/icon/
 apps/models_provider/impl/tencent_model_provider/credential/stt.py
 apps/models_provider/impl/tencent_model_provider/model/stt.py
@@ -191,3 +192,4 @@ tmp/
 config.yml
 .SANDBOX_BANNED_HOSTS
 copilot-instructions.md
+.claude/

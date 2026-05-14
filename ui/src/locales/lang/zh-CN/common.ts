@@ -155,4 +155,17 @@ export default {
   knowledgeImportTip:
     '导入创建知识库成功，文档数据未向量化，请先设置知识库的向量模型，并对文档进行向量化操作',
   import: '导入',
+  sensitivity: {
+    public: '公开',
+    internal: '内部',
+    confidential: '机密',
+    secret: '涉密',
+    field: '敏感等级',
+    helpText: '文档敏感等级 — 严格控制对外分享许可',
+    edit: '修改敏感等级',
+    editSave: '保存',
+    editSuccess: '已更新',
+    editPermissionDenied: '需要『模板管理员』权限',
+    editMissingDoc: '缺少文档标识，无法保存',
+  },
 }

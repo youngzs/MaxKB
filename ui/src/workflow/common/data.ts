@@ -422,6 +422,56 @@ export const documentExtractNode = {
     },
   },
 }
+export const docxRenderNode = {
+  type: WorkflowType.DocxRenderNode,
+  text: t('workflow.nodes.docxRender.subtitle'),
+  label: t('workflow.nodes.docxRender.title'),
+  height: 252,
+  properties: {
+    stepName: t('workflow.nodes.docxRender.title'),
+    config: {
+      fields: [
+        {
+          label: t('workflow.nodes.docxRender.outputOssKey'),
+          value: 'output_oss_key',
+        },
+        {
+          label: t('workflow.nodes.docxRender.error'),
+          value: 'error',
+        },
+      ],
+    },
+  },
+}
+export const zipPackNode = {
+  type: WorkflowType.ZipPackNode,
+  text: t('workflow.nodes.zipPack.subtitle'),
+  label: t('workflow.nodes.zipPack.title'),
+  height: 252,
+  properties: {
+    stepName: t('workflow.nodes.zipPack.title'),
+    config: {
+      fields: [
+        {
+          label: t('workflow.nodes.zipPack.outputOssKey'),
+          value: 'output_oss_key',
+        },
+        {
+          label: t('workflow.nodes.zipPack.includedCount'),
+          value: 'included_count',
+        },
+        {
+          label: t('workflow.nodes.zipPack.missing'),
+          value: 'missing',
+        },
+        {
+          label: t('workflow.nodes.zipPack.error'),
+          value: 'error',
+        },
+      ],
+    },
+  },
+}
 export const documentSplitNode = {
   type: WorkflowType.DocumentSplitNode,
   text: t('workflow.nodes.documentSplitNode.text'),
@@ -795,7 +845,7 @@ export const knowledgeMenuNodes = [
   },
   {
     label: t('workflow.nodes.classify.other'),
-    list: [mcpNode, toolNode],
+    list: [mcpNode, toolNode, docxRenderNode, zipPackNode],
   },
 ]
 
@@ -834,7 +884,7 @@ export const menuNodes = [
   },
   {
     label: t('workflow.nodes.classify.other'),
-    list: [mcpNode, toolNode],
+    list: [mcpNode, toolNode, docxRenderNode, zipPackNode],
   },
 ]
 export const applicationLoopMenuNodes = [
@@ -872,7 +922,7 @@ export const applicationLoopMenuNodes = [
   },
   {
     label: t('workflow.nodes.classify.other'),
-    list: [mcpNode, toolNode],
+    list: [mcpNode, toolNode, docxRenderNode, zipPackNode],
   },
 ]
 export const knowledgeLoopMenuNodes = [
@@ -914,7 +964,7 @@ export const knowledgeLoopMenuNodes = [
   },
   {
     label: t('workflow.nodes.classify.other'),
-    list: [mcpNode, toolNode],
+    list: [mcpNode, toolNode, docxRenderNode, zipPackNode],
   },
 ]
 export const toolLoopMenuNodes = [
@@ -956,7 +1006,7 @@ export const toolLoopMenuNodes = [
   },
   {
     label: t('workflow.nodes.classify.other'),
-    list: [mcpNode, toolNode],
+    list: [mcpNode, toolNode, docxRenderNode, zipPackNode],
   },
 ]
 const toolMenuNodes = [
@@ -1000,7 +1050,7 @@ const toolMenuNodes = [
   },
   {
     label: t('workflow.nodes.classify.other'),
-    list: [mcpNode, toolNode],
+    list: [mcpNode, toolNode, docxRenderNode, zipPackNode],
   },
 ]
 export const getMenuNodes = (workflowMode: WorkflowMode) => {
@@ -1179,6 +1229,8 @@ export const nodeDict: any = {
   [WorkflowType.KnowledgeWriteNode]: knowledgeWriteNode,
   [WorkflowType.ToolBaseNode]: toolBaseNode,
   [WorkflowType.ToolStartNode]: toolStartNode,
+  [WorkflowType.DocxRenderNode]: docxRenderNode,
+  [WorkflowType.ZipPackNode]: zipPackNode,
 }
 
 export function isWorkFlow(type: string | undefined) {

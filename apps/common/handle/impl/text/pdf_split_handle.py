@@ -19,8 +19,14 @@ from pypdf.generic import Destination
 from django.utils.translation import gettext_lazy as _
 
 from common.handle.base_split_handle import BaseSplitHandle
+from common.handle.impl.ocr import OcrConfigError, get_ocr_provider
 from common.utils.logger import maxkb_logger
 from common.utils.split_model import SplitModel, smart_split_paragraph
+
+# 当 pypdf 从一页抽到的文字短于该阈值时，认为是扫描页，尝试 OCR fallback
+_OCR_PAGE_TEXT_THRESHOLD = 10
+# OCR 时 PDF 页面渲染 DPI；越高越清晰但越慢/越占内存
+_OCR_PAGE_DPI = 200
 
 default_pattern_list = [
     re.compile("(?<=^)# .*|(?<=\\n)# .*"),
@@ -47,6 +53,10 @@ def get_pdf_object(value):
 
 
 class PdfSplitHandle(BaseSplitHandle):
+    # OCR 默认走 celery 异步任务（apps/knowledge/task/ocr.py），避免阻塞 split 请求线程。
+    # 想在 split 同步路径里跑 OCR（旧行为），在调用前把这个属性置 True。
+    enable_sync_ocr = False
+
     def handle(
         self,
         file,
@@ -83,7 +93,10 @@ class PdfSplitHandle(BaseSplitHandle):
                     return {"name": file.name, "content": result}
 
                 # 没有目录的pdf
-                content = self.handle_pdf_content(file, pdf_document)
+                content = self.handle_pdf_content(
+                    file, pdf_document, pdf_path=temp_file_path,
+                    enable_ocr=self.enable_sync_ocr,
+                )
 
                 if pattern_list is not None and len(pattern_list) > 0:
                     split_model = SplitModel(pattern_list, with_filter, limit)
@@ -103,7 +116,70 @@ class PdfSplitHandle(BaseSplitHandle):
         return {"name": file.name, "content": split_model.parse(content)}
 
     @staticmethod
-    def handle_pdf_content(file, pdf_document):
+    def _ocr_pdf_page(pdf_path, page_num, ocr_provider):
+        """渲染指定页为 PNG bytes，喂给 OCR provider。
+        失败时抛异常，由上层 catch 并记日志，不阻断整本 PDF 处理。"""
+        import fitz  # pymupdf；在用户启用 OCR 之前不会被 import
+        with fitz.open(pdf_path) as doc:
+            page = doc.load_page(page_num)
+            pix = page.get_pixmap(dpi=_OCR_PAGE_DPI)
+            png_bytes = pix.tobytes('png')
+        return ocr_provider.recognize(png_bytes)
+
+    @staticmethod
+    def _try_ocr_empty_pages(pdf_path, page_lines):
+        """对 page_lines 中空（或几乎空）的页做 OCR fallback。
+        - OCR provider 只在确实有空页时才加载（懒初始化）
+        - OCR 未配置时直接跳过，不影响纯文本 PDF
+        - 单页失败不影响其他页
+        - 渲染依赖 pymupdf（fitz），未安装时记 warning 并跳过
+        """
+        empty_indices = [
+            i for i, lines in enumerate(page_lines)
+            if sum(len(t) for t, _ in lines) < _OCR_PAGE_TEXT_THRESHOLD
+        ]
+        if not empty_indices:
+            return  # 全文本 PDF 走这条快路
+
+        # 懒加载 OCR provider
+        try:
+            from system_manage.serializers.ocr_setting import OcrSettingSerializer
+            ocr_provider = get_ocr_provider(OcrSettingSerializer.one())
+        except OcrConfigError as e:
+            maxkb_logger.info(
+                f"PDF has {len(empty_indices)} scanned page(s) but OCR is not configured; skipping. ({e})"
+            )
+            return
+        except Exception as e:
+            maxkb_logger.error(f"PDF OCR provider init failed: {e}")
+            return
+
+        # 校验 pymupdf 可用
+        try:
+            import fitz  # noqa: F401
+        except ImportError:
+            maxkb_logger.warning(
+                "pymupdf is not installed; cannot OCR scanned PDF pages. "
+                "pip install pymupdf to enable."
+            )
+            return
+
+        for idx in empty_indices:
+            try:
+                ocr_text = PdfSplitHandle._ocr_pdf_page(pdf_path, idx, ocr_provider)
+            except Exception as e:
+                maxkb_logger.error(f"PDF OCR failed on page {idx + 1}: {e}")
+                continue
+            if not ocr_text:
+                continue
+            # OCR 文本无字号；填 0，后续会被归类为正文段落
+            page_lines[idx] = [
+                (line.strip(), 0) for line in ocr_text.split('\n') if line.strip()
+            ]
+            maxkb_logger.info(f"PDF OCR recovered page {idx + 1}: {len(ocr_text)} chars")
+
+    @staticmethod
+    def handle_pdf_content(file, pdf_document, pdf_path=None, enable_ocr=False):
         # 第一步:收集所有字体大小
         font_sizes = []
         page_lines = []
@@ -113,6 +189,11 @@ class PdfSplitHandle(BaseSplitHandle):
             for line_text, font_size in lines:
                 if line_text and font_size > 0:
                     font_sizes.append(font_size)
+
+        # 扫描页 OCR fallback。默认走 celery 异步任务（避免阻塞 split 请求），
+        # 仅当调用方显式开启 enable_ocr 时才在本线程跑 OCR。
+        if pdf_path and enable_ocr:
+            PdfSplitHandle._try_ocr_empty_pages(pdf_path, page_lines)
 
         # 计算正文字体大小(众数)
         if not font_sizes:
@@ -141,9 +222,12 @@ class PdfSplitHandle(BaseSplitHandle):
                 else:  # 正文
                     content += f"{text}\n"
 
-            for image_index in range(PdfSplitHandle.get_page_image_count(page)):
-                content += f"![image](image_{page_num}_{image_index})\n\n"
-
+            # NOTE: 旧版本会在这里给每个内嵌图片输出
+            #   ![image](image_<page>_<index>)
+            # 占位符，但 image_<page>_<index> 不对应任何已保存的 File，前端
+            # 渲染只能看到一堆"破图"。源 PDF 始终可在文档详情里下载，所以
+            # 直接丢弃这些悬挂引用，不再污染段落。需要图片的话需要先把
+            # 内嵌图片走 save_image 入库并改写 markdown，再恢复输出。
             content = content.replace("\0", "")
 
             elapsed_time = time.time() - start_time
@@ -239,6 +323,8 @@ class PdfSplitHandle(BaseSplitHandle):
 
         # 创建存储章节内容的数组
         chapters = []
+        # 累计真实抽到的正文长度（不含 fallback 成 title 的占位），用于判断是否为扫描版
+        total_real_chapter_text_len = 0
 
         # 遍历目录并按章节提取文本
         for i, entry in enumerate(toc):
@@ -278,6 +364,7 @@ class PdfSplitHandle(BaseSplitHandle):
 
             # Null characters are not allowed.
             chapter_text = chapter_text.replace("\0", "")
+            total_real_chapter_text_len += len(chapter_text.strip())
             # 限制标题长度
             real_chapter_title = chapter_title[:256]
             # 限制章节内容长度
@@ -293,6 +380,16 @@ class PdfSplitHandle(BaseSplitHandle):
                     }
                 )
             # 保存章节内容和章节标题
+
+        # 扫描版 PDF 即便带大纲，每章 extract_page_text 也几乎抽不到字。
+        # 此时降级到 handle_pdf_content，让 OCR fallback 有机会跑。
+        if total_real_chapter_text_len < _OCR_PAGE_TEXT_THRESHOLD * max(1, len(toc)):
+            maxkb_logger.info(
+                f"PDF TOC produced near-empty chapters "
+                f"(total {total_real_chapter_text_len} chars over {len(toc)} entries); "
+                f"falling back to full-page extraction so OCR can run."
+            )
+            return None
         return chapters
 
     @staticmethod
@@ -305,6 +402,8 @@ class PdfSplitHandle(BaseSplitHandle):
         toc_start_page = -1
         page_content = ""
         handle_pre_toc = True
+        # 累计真实抽到的章节正文长度，用于判断扫描版降级
+        total_real_chapter_text_len = 0
         # 遍历 PDF 的每一页，查找带有目录链接的页
         for page_num, page in enumerate(doc.pages):
             links = PdfSplitHandle.get_internal_links(doc, page)
@@ -362,6 +461,7 @@ class PdfSplitHandle(BaseSplitHandle):
 
                 # Null characters are not allowed.
                 chapter_text = chapter_text.replace("\0", "")
+                total_real_chapter_text_len += len(chapter_text.strip())
 
                 # 限制章节内容长度
                 if 0 < limit < len(chapter_text):
@@ -407,6 +507,16 @@ class PdfSplitHandle(BaseSplitHandle):
                 page_content = page_content.strip()
                 pre_toc = split_model.parse(page_content)
             chapters = pre_toc + chapters
+
+        # 扫描版 PDF 即便有内部跳转链接，extract_page_text 也几乎抽不到字。
+        # 任何 chapter 都接近空时降级到 handle_pdf_content 走 OCR。
+        if chapters and total_real_chapter_text_len < _OCR_PAGE_TEXT_THRESHOLD * len(chapters):
+            maxkb_logger.info(
+                f"PDF internal-links produced near-empty chapters "
+                f"({total_real_chapter_text_len} chars over {len(chapters)} entries); "
+                f"falling back to full-page extraction so OCR can run."
+            )
+            return None
         return chapters
 
     @staticmethod

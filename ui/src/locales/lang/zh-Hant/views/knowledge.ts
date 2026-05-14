@@ -8,7 +8,7 @@ export default {
     sync: '同步',
   },
   tip: {
-    professionalMessage: '社群版最多支援 50 個知識庫，如需擁有更多知識庫，請升級為專業版。',
+    professionalMessage: '當前部署最多支援 50 個知識庫，已達上限，請聯絡管理員處理。',
     syncSuccess: '同步任務發送成功',
     updateModeMessage: '修改知識庫向量模型後，需要對知識庫向量化，是否繼續保存？',
   },

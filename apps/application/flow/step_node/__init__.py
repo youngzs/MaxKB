@@ -42,6 +42,8 @@ from .variable_splitting_node import BaseVariableSplittingNode
 from .video_understand_step_node import BaseVideoUnderstandNode
 from .document_split_node import BaseDocumentSplitNode
 from .tool_start_node import BaseToolStartStepNode
+from .docx_render_node import BaseDocxRenderNode
+from .zip_pack_node import BaseZipPackNode
 
 node_list = [BaseStartStepNode, BaseChatNode, BaseSearchKnowledgeNode, BaseSearchDocumentNode, BaseQuestionNode,
              BaseConditionNode, BaseReplyNode,
@@ -54,7 +56,7 @@ node_list = [BaseStartStepNode, BaseChatNode, BaseSearchKnowledgeNode, BaseSearc
              BaseLoopContinueNode,
              BaseLoopBreakNode, BaseVariableSplittingNode, BaseParameterExtractionNode, BaseVariableAggregationNode,
              BaseDataSourceLocalNode, BaseDataSourceWebNode, BaseKnowledgeWriteNode, BaseDocumentSplitNode,
-             BaseToolStartStepNode, BaseToolWorkflowLibNodeNode]
+             BaseToolStartStepNode, BaseToolWorkflowLibNodeNode, BaseDocxRenderNode, BaseZipPackNode]
 
 node_map = {n.type: {w: n for w in n.support} for n in node_list}
 
