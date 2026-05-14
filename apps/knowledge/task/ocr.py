@@ -17,6 +17,11 @@
           让 _try_ocr_empty_pages 真正调用视觉模型
        c. 若新内容比库里现存的多，删旧 paragraph、按 OCR 文本重新写入
        d. 调 embedding_by_document 让向量库跟上
+
+注意 import 约定：只有标准库 / 外部包 / celery_app / logger 在模块顶层 import。
+所有 knowledge.* 与 common.handle.* 的 import 都延迟到函数体内 —— 这样
+knowledge/task/__init__.py 里的 `from . import ocr` 触发本模块加载时不会引入
+任何循环依赖，celery worker 也能在启动时稳定注册到 celery:ocr_pdf_document。
 """
 import io
 import re
@@ -25,16 +30,8 @@ import traceback
 import uuid_utils.compat as uuid
 from celery_once import QueueOnce
 from django.db.models import QuerySet, Max
-from django.utils.translation import gettext_lazy as _
 
-from common.handle.impl.text.pdf_split_handle import PdfSplitHandle
 from common.utils.logger import maxkb_logger
-from knowledge.models import Document, Paragraph, Knowledge, File
-from knowledge.serializers.common import get_embedding_model_id_by_knowledge_id
-from knowledge.task.embedding import (
-    embedding_by_document,
-    delete_embedding_by_document,
-)
 from ops import celery_app
 
 
@@ -69,6 +66,8 @@ class _BytesUpload:
 
 def _get_source_pdf_bytes(document) -> bytes | None:
     """Resolve the upload's source File row and return its raw bytes, or None."""
+    from knowledge.models import File
+
     file_id = (document.meta or {}).get('source_file_id')
     if not file_id:
         return None
@@ -89,6 +88,8 @@ def _document_needs_ocr(document) -> bool:
     dangling image placeholders, the document was a scan that pypdf
     couldn't read — worth trying OCR. Saves a render+LLM round-trip
     for ordinary text PDFs."""
+    from knowledge.models import Paragraph
+
     paras = list(Paragraph.objects.filter(document_id=document.id).values_list('content', flat=True))
     if not paras:
         return True
@@ -106,12 +107,13 @@ def _document_needs_ocr(document) -> bool:
 def _replace_paragraphs(document, content_list):
     """Wipe existing paragraphs (and their vectors) and bulk-insert
     OCR-derived ones. Skip any paragraph that's only image placeholders."""
+    from knowledge.models import Document, Paragraph
+    from knowledge.serializers.paragraph import delete_problems_and_mappings
+    from knowledge.task.embedding import delete_embedding_by_document
+
     old_ids = list(
         Paragraph.objects.filter(document_id=document.id).values_list('id', flat=True)
     )
-    # Avoid a circular import with paragraph serializer.
-    from knowledge.serializers.paragraph import delete_problems_and_mappings
-
     if old_ids:
         delete_problems_and_mappings([str(pid) for pid in old_ids])
     delete_embedding_by_document(str(document.id))
@@ -174,6 +176,11 @@ def ocr_pdf_document(document_id):
 
     Safe to enqueue for any document; bails out cheaply if the doc isn't
     a PDF or its existing paragraphs already contain text."""
+    from common.handle.impl.text.pdf_split_handle import PdfSplitHandle
+    from knowledge.models import Document
+    from knowledge.serializers.common import get_embedding_model_id_by_knowledge_id
+    from knowledge.task.embedding import embedding_by_document
+
     try:
         document = QuerySet(Document).filter(id=document_id).first()
         if document is None:
@@ -257,6 +264,8 @@ def enqueue_ocr_if_pdf(document_id) -> bool:
     """Enqueue ocr_pdf_document for a freshly-created document. Safe no-op
     if the document doesn't exist, isn't a PDF, or the task is already
     queued (celery_once handles dedup)."""
+    from knowledge.models import Document, File
+
     try:
         document = QuerySet(Document).filter(id=document_id).first()
         if document is None:
