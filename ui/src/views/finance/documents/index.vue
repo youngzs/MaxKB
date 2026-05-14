@@ -197,7 +197,7 @@ import { MsgConfirm, MsgSuccess } from '@/utils/message'
 import { t } from '@/locales'
 import useStore from '@/stores'
 import { hasPermission } from '@/utils/permission'
-import { PermissionConst } from '@/utils/permission/data'
+import { PermissionConst, RoleConst } from '@/utils/permission/data'
 import type { Generation, GenerationStatus } from '@/api/finance/type'
 import DocxPreview from '@/components/docx-preview/index.vue'
 
@@ -218,6 +218,7 @@ const previewTarget = ref<Generation | null>(null)
 const canEdit = computed(() =>
   hasPermission(
     [
+      RoleConst.WORKSPACE_MANAGE.getWorkspaceRole,
       PermissionConst.FINANCE_EDIT.getWorkspacePermission,
       PermissionConst.FINANCE_EDIT.getWorkspacePermissionWorkspaceManageRole,
     ],

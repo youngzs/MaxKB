@@ -198,7 +198,7 @@ import { MsgConfirm, MsgSuccess } from '@/utils/message'
 import { t } from '@/locales'
 import useStore from '@/stores'
 import { hasPermission } from '@/utils/permission'
-import { PermissionConst } from '@/utils/permission/data'
+import { PermissionConst, RoleConst } from '@/utils/permission/data'
 import type { MaterialsTask, MaterialsTaskStatus } from '@/api/finance/type'
 import CreateTaskDialog from './components/CreateTaskDialog.vue'
 
@@ -226,6 +226,7 @@ const pageSize = computed<number>({
 const canEdit = computed(() =>
   hasPermission(
     [
+      RoleConst.WORKSPACE_MANAGE.getWorkspaceRole,
       PermissionConst.FINANCE_EDIT.getWorkspacePermission,
       PermissionConst.FINANCE_EDIT.getWorkspacePermissionWorkspaceManageRole,
     ],

@@ -391,7 +391,7 @@ import { MsgConfirm, MsgError, MsgSuccess } from '@/utils/message'
 import { t } from '@/locales'
 import useStore from '@/stores'
 import { hasPermission } from '@/utils/permission'
-import { PermissionConst } from '@/utils/permission/data'
+import { PermissionConst, RoleConst } from '@/utils/permission/data'
 import { downloadZip } from '@/api/finance/materials-task'
 import type {
   MatchedDocument,
@@ -436,6 +436,7 @@ const projectName = computed(() => {
 const canEdit = computed(() =>
   hasPermission(
     [
+      RoleConst.WORKSPACE_MANAGE.getWorkspaceRole,
       PermissionConst.FINANCE_EDIT.getWorkspacePermission,
       PermissionConst.FINANCE_EDIT.getWorkspacePermissionWorkspaceManageRole,
     ],
@@ -446,6 +447,7 @@ const canEdit = computed(() =>
 const canReview = computed(() =>
   hasPermission(
     [
+      RoleConst.WORKSPACE_MANAGE.getWorkspaceRole,
       PermissionConst.FINANCE_REVIEW.getWorkspacePermission,
       PermissionConst.FINANCE_REVIEW.getWorkspacePermissionWorkspaceManageRole,
     ],

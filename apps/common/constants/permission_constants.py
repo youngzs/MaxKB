@@ -1933,13 +1933,29 @@ class PermissionConstants(Enum):
         parent_group=[SystemGroup.OPERATION_LOG]
     )
 
-    # 融资工作台 (Finance Workspace) — Gate 1: declare-only,
-    # not bound to any default role. Role bindings come in Gate 2.
-    FINANCE_READ = Permission(group=Group.FINANCE, operate=Operate.READ)
-    FINANCE_EDIT = Permission(group=Group.FINANCE, operate=Operate.EDIT)
-    FINANCE_REVIEW = Permission(group=Group.FINANCE, operate=Operate.REVIEW)
-    FINANCE_SEND = Permission(group=Group.FINANCE, operate=Operate.SEND)
-    FINANCE_TEMPLATE_MANAGE = Permission(group=Group.FINANCE, operate=Operate.TEMPLATE_MANAGE)
+    # 融资工作台 (Finance Workspace) — role bindings:
+    # READ/EDIT: all workspace users (ADMIN, WORKSPACE_MANAGE, USER)
+    # REVIEW/SEND/TEMPLATE_MANAGE: managerial only (ADMIN, WORKSPACE_MANAGE)
+    FINANCE_READ = Permission(
+        group=Group.FINANCE, operate=Operate.READ,
+        role_list=[RoleConstants.ADMIN, RoleConstants.WORKSPACE_MANAGE, RoleConstants.USER],
+    )
+    FINANCE_EDIT = Permission(
+        group=Group.FINANCE, operate=Operate.EDIT,
+        role_list=[RoleConstants.ADMIN, RoleConstants.WORKSPACE_MANAGE, RoleConstants.USER],
+    )
+    FINANCE_REVIEW = Permission(
+        group=Group.FINANCE, operate=Operate.REVIEW,
+        role_list=[RoleConstants.ADMIN, RoleConstants.WORKSPACE_MANAGE],
+    )
+    FINANCE_SEND = Permission(
+        group=Group.FINANCE, operate=Operate.SEND,
+        role_list=[RoleConstants.ADMIN, RoleConstants.WORKSPACE_MANAGE],
+    )
+    FINANCE_TEMPLATE_MANAGE = Permission(
+        group=Group.FINANCE, operate=Operate.TEMPLATE_MANAGE,
+        role_list=[RoleConstants.ADMIN, RoleConstants.WORKSPACE_MANAGE],
+    )
 
     def get_workspace_application_permission(self):
         return lambda r, kwargs: Permission(group=self.value.group, operate=self.value.operate,

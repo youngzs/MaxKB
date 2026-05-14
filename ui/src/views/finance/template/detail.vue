@@ -174,7 +174,7 @@ import { MsgError, MsgSuccess } from '@/utils/message'
 import { t } from '@/locales'
 import useStore from '@/stores'
 import { hasPermission } from '@/utils/permission'
-import { PermissionConst } from '@/utils/permission/data'
+import { PermissionConst, RoleConst } from '@/utils/permission/data'
 import type {
   Placeholder,
   PlaceholderType,
@@ -209,6 +209,7 @@ const form = reactive<EditableForm>({
 const canEdit = computed(() =>
   hasPermission(
     [
+      RoleConst.WORKSPACE_MANAGE.getWorkspaceRole,
       PermissionConst.FINANCE_EDIT.getWorkspacePermission,
       PermissionConst.FINANCE_EDIT.getWorkspacePermissionWorkspaceManageRole,
     ],

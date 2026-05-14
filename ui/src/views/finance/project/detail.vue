@@ -91,7 +91,7 @@ import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import useStore from '@/stores'
 import { hasPermission } from '@/utils/permission'
-import { PermissionConst } from '@/utils/permission/data'
+import { PermissionConst, RoleConst } from '@/utils/permission/data'
 import type { Project, ProjectStatus } from '@/api/finance/type'
 import ProjectFormDialog from './components/ProjectFormDialog.vue'
 
@@ -106,6 +106,7 @@ const project = ref<Project | null>(null)
 const canEdit = computed(() =>
   hasPermission(
     [
+      RoleConst.WORKSPACE_MANAGE.getWorkspaceRole,
       PermissionConst.FINANCE_EDIT.getWorkspacePermission,
       PermissionConst.FINANCE_EDIT.getWorkspacePermissionWorkspaceManageRole,
     ],
