@@ -51,14 +51,16 @@ class VisionLlmOcrProvider(OcrProvider):
         ])
         # model.invoke has no built-in timeout; a hung provider connection would
         # otherwise block the celery OCR task forever. Run it in a worker thread
-        # and enforce a hard deadline. On timeout the underlying thread is
-        # abandoned (it will eventually error or be reclaimed) but the OCR task
-        # moves on to the next page.
+        # and enforce a hard deadline.
+        #
+        # IMPORTANT: do NOT use `with ThreadPoolExecutor()` — its __exit__ calls
+        # shutdown(wait=True), which blocks on the hung thread and silently
+        # eats the timeout. We must shutdown(wait=False) so the OCR task can
+        # move on to the next page while the dead thread is left to be reclaimed.
+        _ex = concurrent.futures.ThreadPoolExecutor(max_workers=1)
+        _future = _ex.submit(model.invoke, [message])
         try:
-            with concurrent.futures.ThreadPoolExecutor(max_workers=1) as _ex:
-                response = _ex.submit(model.invoke, [message]).result(
-                    timeout=_OCR_INVOKE_TIMEOUT_SECONDS
-                )
+            response = _future.result(timeout=_OCR_INVOKE_TIMEOUT_SECONDS)
         except concurrent.futures.TimeoutError:
             maxkb_logger.error(
                 f"OCR: vision model invoke timed out after {_OCR_INVOKE_TIMEOUT_SECONDS}s"
@@ -67,6 +69,9 @@ class VisionLlmOcrProvider(OcrProvider):
         except Exception as e:
             maxkb_logger.error(f"OCR: vision model invoke failed: {e}")
             raise OcrError(f"视觉模型识别失败：{e}")
+        finally:
+            # wait=False: return immediately even if the worker thread is hung.
+            _ex.shutdown(wait=False)
 
         # langchain AIMessage.content 可能是 str 或 list[dict]
         content = response.content if hasattr(response, 'content') else str(response)
