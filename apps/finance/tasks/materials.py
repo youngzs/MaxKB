@@ -150,6 +150,11 @@ def async_parse(self, materials_task_id, run_id=None):
     _set_status(instance, MaterialsTaskStatus.PARSING, error_message='')
     try:
         instance = _do_parse(instance, workspace_id=workspace_id)
+        # Settle back to DRAFT — PARSING was the in-flight marker for the
+        # poller. Without this the task stays in PARSING forever even though
+        # ``parsed_items`` is correctly populated; the UI shows a permanent
+        # spinner. Mirror of async_match's pattern (DRAFT after matched).
+        _set_status(instance, MaterialsTaskStatus.DRAFT)
         _parse_output = {'parsed_items_count': len(instance.parsed_items or [])}
         workflow_runtime.mark_succeeded(run, t0, output=_parse_output)
         _record_run_engine(

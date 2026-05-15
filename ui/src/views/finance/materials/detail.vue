@@ -498,7 +498,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import type { FormInstance, FormRules } from 'element-plus'
 import { MsgConfirm, MsgError, MsgSuccess, MsgWarning } from '@/utils/message'
@@ -934,15 +934,28 @@ watch(matchedForFocused, (list) => {
   }
 })
 
-onMounted(async () => {
-  const wid = user.getWorkspaceId()
-  if (wid && projectStore.list.length === 0) {
-    projectStore.fetchList(wid).catch(() => undefined)
-  }
-  await fetchTask()
-  // Send logs are workspace+task scoped — fetch them once the task is loaded.
-  fetchSendLogs().catch(() => undefined)
-})
+// Refetch on `pk` change as well as on first mount. Without the watcher,
+// navigating between two materials-task detail pages without leaving the
+// route reused the component instance and onMounted didn't fire again,
+// leaving stale state — and a known race left the page blank on first SPA
+// jump from the list. `immediate: true` runs the load once on mount and
+// closes the race.
+watch(
+  () => pk.value,
+  async (next, prev) => {
+    if (!next) return
+    // Skip the spurious initial fire when prev === next on mount (Vue runs
+    // immediate watcher with prev === undefined → no skip needed).
+    if (prev === next) return
+    const wid = user.getWorkspaceId()
+    if (wid && projectStore.list.length === 0) {
+      projectStore.fetchList(wid).catch(() => undefined)
+    }
+    await fetchTask()
+    fetchSendLogs().catch(() => undefined)
+  },
+  { immediate: true },
+)
 
 onBeforeUnmount(() => {
   if (task.value) {

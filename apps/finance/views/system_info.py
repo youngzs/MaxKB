@@ -267,15 +267,40 @@ def _celery_health() -> dict[str, Any]:
         from ops import celery_app
 
         # --- ping: is anyone home? -------------------------------------
+        # 5s timeout (was 2s) — a busy worker pool can miss the 2s window
+        # entirely under realistic load even when it is actively consuming
+        # tasks. Observed in production: ping reported offline while
+        # WorkflowRun rows were being created and audit events flowed.
         try:
-            pong = celery_app.control.ping(timeout=2)
+            pong = celery_app.control.ping(timeout=5)
             out['worker_online'] = bool(pong)
         except Exception as exc:  # noqa: BLE001
             maxkb_logger.warning(f'[finance.system_info] celery ping failed: {exc}')
-            return out
+
+        # Heartbeat-independent fallback: if ping missed, look for direct
+        # evidence in the DB that a finance worker ran something recently.
+        # A WorkflowRun touched in the last 5 minutes (running or succeeded)
+        # is unambiguous proof a worker is alive, regardless of what the
+        # broker heartbeat said. Rescues us from false "offline" reads
+        # under sustained load without hiding a truly dead worker for long.
+        if not out['worker_online']:
+            try:
+                from datetime import timedelta
+                from django.utils import timezone
+                from finance.models import WorkflowRun
+                window_start = timezone.now() - timedelta(minutes=5)
+                if WorkflowRun.objects.filter(
+                    updated_at__gte=window_start,
+                    status__in=['RUNNING', 'SUCCEEDED'],
+                ).exists():
+                    out['worker_online'] = True
+            except Exception as exc:  # noqa: BLE001
+                maxkb_logger.warning(
+                    f'[finance.system_info] worker_online db-fallback failed: {exc}'
+                )
 
         if not out['worker_online']:
-            # No worker answered — the remaining inspect() calls would
+            # Both probes failed — the remaining inspect() calls would
             # just time out. Return early with the offline shape.
             return out
 

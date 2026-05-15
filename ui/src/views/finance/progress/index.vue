@@ -1,53 +1,21 @@
 <template>
-  <div class="finance-stub">
-    <div class="finance-stub__inner">
-      <el-tag class="finance-stub__badge" type="warning" effect="plain">
-        P3 · {{ $t('views.finance.planning') }}
-      </el-tag>
-      <h2 class="finance-stub__title">{{ $t('views.finance.progress') }}</h2>
-      <p class="finance-stub__subtitle">{{ $t('views.finance.comingSoon') }}</p>
-      <el-button type="primary" text @click="goBack">
-        {{ $t('views.finance.action.back') }}
-      </el-button>
-    </div>
-  </div>
+  <!--
+    P2 · 进度归集 — "coming soon" rich-doc page.
+    Source of truth: docs/finance-module-design.md §1.2 #4.
+  -->
+  <PlanningDoc
+    phase="P2"
+    tracking-id="FINANCE-PROGRESS"
+    :title="$t('views.finance.progress')"
+    :lead="$t('views.finance.planningDoc.progress.lead')"
+    :pain-points="$tm('views.finance.planningDoc.progress.painPoints') as string[]"
+    :capabilities="$tm('views.finance.planningDoc.progress.capabilities') as any"
+    :flow="$tm('views.finance.planningDoc.progress.flow') as any"
+    :dependencies="$tm('views.finance.planningDoc.progress.dependencies') as string[]"
+    :not-doing="$tm('views.finance.planningDoc.progress.notDoing') as string[]"
+  />
 </template>
 
 <script setup lang="ts">
-import { useRouter } from 'vue-router'
-const router = useRouter()
-function goBack() {
-  router.push('/finance/overview')
-}
+import PlanningDoc from '../components/PlanningDoc.vue'
 </script>
-
-<style lang="scss" scoped>
-.finance-stub {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  min-height: calc(100vh - 200px);
-  padding: 24px;
-
-  &__inner {
-    text-align: center;
-  }
-
-  &__badge {
-    margin-bottom: 16px;
-  }
-
-  &__title {
-    font-size: 22px;
-    font-weight: 600;
-    margin: 0 0 12px;
-    color: var(--el-text-color-primary);
-  }
-
-  &__subtitle {
-    margin: 0 0 20px;
-    color: var(--el-text-color-regular);
-    font-size: 14px;
-  }
-}
-</style>

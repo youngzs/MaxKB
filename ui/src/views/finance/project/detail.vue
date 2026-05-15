@@ -87,7 +87,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import useStore from '@/stores'
 import { hasPermission } from '@/utils/permission'
@@ -164,16 +164,19 @@ const onSaveSuccess = (updated: Project) => {
   project.value = updated
 }
 
+// `immediate: true` covers the case where Vue Router re-uses the parent
+// route component on first SPA navigation from the list — in that scenario
+// onMounted fires before route.params.pk is fully populated, so the plain
+// onMounted-only path was leaving the page blank until a hard refresh.
+// Running the watcher immediately closes the race; the route.name guard
+// keeps it from firing when navigating away.
 watch(
   () => route.params.pk,
   () => {
     if (route.name === 'finance-project-detail') fetchDetail()
   },
+  { immediate: true },
 )
-
-onMounted(() => {
-  fetchDetail()
-})
 </script>
 
 <style lang="scss" scoped>

@@ -15,6 +15,151 @@ export default {
   },
   comingSoon: 'Coming soon',
   planning: 'Planned',
+  planningDoc: {
+    feedback: 'Send feedback',
+    painPoints: 'Current pain points',
+    capabilities: 'Capabilities you will get',
+    flow: 'End-to-end flow',
+    dependencies: 'Dependencies & prerequisites',
+    notDoing: 'Out of scope for this phase',
+    feasibility: {
+      lead:
+        'Given a potential financing deal, give the analyst a "Go / No-go / Need more material" call in under five minutes — with cited evidence — so dead-end applications get filtered before the team invests real effort.',
+      painPoints: [
+        'Each bank / trust / leasing co. has its own red lines; new hires take months to internalise them',
+        'The same deal shape gets re-evaluated from scratch every time, nothing accumulates',
+        "Group / sub-entity counterparties' eligibility lists are scattered in email and chat",
+      ],
+      capabilities: [
+        {
+          icon: '⚖️',
+          title: 'Rule-based first-pass',
+          desc: 'Built-in eligibility rules for banks, trusts, brokers, leasing cos., and policy banks. A hit produces a verdict.',
+        },
+        {
+          icon: '📊',
+          title: 'Cited evidence',
+          desc: 'Every verdict links back to the regulation clause, the knowledge-base doc, or the historical deal that justifies it.',
+        },
+        {
+          icon: '🧮',
+          title: 'Gap-checklist',
+          desc: '"Need more material" verdicts auto-generate a checklist and can spawn a materials-packaging task in one click.',
+        },
+        {
+          icon: '🔀',
+          title: 'Side-by-side comparison',
+          desc: 'Run the same deal against N counterparties at once; output a comparison matrix (limit range / tenor / indicative rate / composite score).',
+        },
+      ],
+      flow: [
+        { title: 'Inputs', desc: 'Entity, amount, use, collateral, candidate counterparties' },
+        { title: 'Rule + AI scoring', desc: 'Run rule engine and LLM in parallel' },
+        { title: 'Verdict', desc: 'Go / No-go / Need more material with evidence' },
+        { title: 'Hand-off', desc: 'Spawn materials task or document in one click' },
+      ],
+      dependencies: [
+        'Knowledge base must contain regulation files and counterparty eligibility handbooks',
+        'Optional: external credit / company-info APIs (rule-only mode if absent)',
+        'Needs LLM model; falls back to pure-rule verdicts when not configured',
+      ],
+      notDoing: [
+        'Does not replace the credit committee — only pre-screens',
+        'Does not commit to specific rates / limits — all numbers are indicative',
+      ],
+    },
+    progress: {
+      lead:
+        "Pull every in-flight financing deal, across departments and counterparties and multi-month timelines, into one board: stage, owner, key docs, risk flags — at a glance. The system auto-flags anomalies before anyone has to ask.",
+      painPoints: [
+        'Deals live across Excel, email and chat — statuses drift',
+        'Stage stalls have no central owner; we discover them only when the monthly report comes due',
+        'Execs asking for "all active financings, today" still triggers an ad-hoc spreadsheet pull',
+      ],
+      capabilities: [
+        {
+          icon: '🗺️',
+          title: 'Project timeline',
+          desc: 'Gantt-style view from origination to disbursement with owners, planned and actual dates.',
+        },
+        {
+          icon: '🚨',
+          title: 'Auto risk-flagging',
+          desc: 'Stage-dwell time, document completeness, deadline proximity all roll into yellow / red flags.',
+        },
+        {
+          icon: '🎯',
+          title: 'Exec dashboard',
+          desc: 'Total in-flight, average cycle, pass rate, counterparty mix — drill-down by entity and team.',
+        },
+        {
+          icon: '📅',
+          title: 'Deadline alerts',
+          desc: 'Expiring documents, agreement renewals, covenant deliveries — owners get notified before the deadline.',
+        },
+      ],
+      flow: [
+        { title: 'Data sources', desc: 'Reuse existing project / materials / document data' },
+        { title: 'Stage modelling', desc: 'Per-financing-type stage templates' },
+        { title: 'Risk scoring', desc: 'Rules plus historical-cohort baselines' },
+        { title: 'Surface', desc: 'Gantt + dashboard + deadline list' },
+      ],
+      dependencies: [
+        'P1 (project / materials / documents) is the data backbone — already shipped',
+        "Need each financing type's standard stage config defined with the business team",
+      ],
+      notDoing: [
+        'Does not replace external progress reports filed with counterparties',
+        'Does not force analysts to fill anything — transitions are system-side wherever possible',
+      ],
+    },
+    intel: {
+      lead:
+        'Listen continuously to rate, policy and counterparty signals; match each item against active deal profiles; surface only what is relevant, on the channel that fits.',
+      painPoints: [
+        'Policy and rate signals spread across PBoC, CBIRC, local regulators, counterparty WeChat accounts — nobody can watch them all',
+        'Same policy hits different deals differently; broadcast = ignored',
+        'Missing a window (LPR move, special-bond quota) can cost real money',
+      ],
+      capabilities: [
+        {
+          icon: '🛰️',
+          title: 'Multi-source ingest',
+          desc: 'Regulator sites, RSS feeds from counterparty channels, custom sources — unified pipeline.',
+        },
+        {
+          icon: '🎯',
+          title: 'Profile match',
+          desc: 'Route items based on the entity, industry, and financing type of in-flight deals.',
+        },
+        {
+          icon: '🔔',
+          title: 'Multi-channel push',
+          desc: 'In-workspace inbox / email / Wecom, with importance-based routing.',
+        },
+        {
+          icon: '📚',
+          title: 'Knowledge accumulation',
+          desc: 'Every pushed item lands in the knowledge base and is reusable by materials and feasibility modules.',
+        },
+      ],
+      flow: [
+        { title: 'Configure sources', desc: 'Admin onboards RSS / API / custom feeds' },
+        { title: 'Ingest + dedupe', desc: 'Scheduled pull, title+body hash dedupe' },
+        { title: 'Profile scoring', desc: 'Relevance score against active deals' },
+        { title: 'Route', desc: 'Importance-aware channel selection' },
+      ],
+      dependencies: [
+        'At least three stable external sources (commercial or open APIs)',
+        'Embedding model for similarity matching (falls back to keyword hits when not configured)',
+        'P1 and P2 data depth determines push precision — ship after both',
+      ],
+      notDoing: [
+        'Not a general financial-news aggregator (Wind / Bloomberg already exist)',
+        'No sentiment analysis (out of scope)',
+      ],
+    },
+  },
   overviewDesc:
     'One-stop management for finance project materials, documents, progress, and compliance audit.',
   aiBanner: {
@@ -44,6 +189,26 @@ export default {
       title: 'Progress Tracking',
       desc: 'Aggregate project progress and automatically flag risks.',
     },
+    intel: {
+      title: 'News Feed',
+      desc: 'Capture rates, policies and counterparty signals and route them to the right deals.',
+    },
+  },
+  overviewKpis: {
+    inFlight: 'In-flight projects',
+    inFlightHint: 'Projects currently in the engaging stage',
+    pendingReview: 'Pending reviews',
+    pendingReviewHint: 'Materials tasks awaiting approval',
+    docsTotal: 'Documents generated',
+    docsTotalHint: 'Cumulative process-document generations',
+    sendsRecent: 'Sends · last 7 days',
+    sendsRecentHint: 'Outbound deliveries logged in audit',
+  },
+  overviewSections: {
+    entries: 'Modules',
+    planning: 'Coming soon',
+    planningDesc: 'The capabilities below are on the roadmap. Click any card for the full plan.',
+    viewPlan: 'View plan',
   },
   action: {
     enter: 'Enter',
@@ -66,9 +231,9 @@ export default {
       cta: 'Create your first project',
     },
     searchPlaceholder: 'Search by project name',
-    detailPlaceholder: 'Project detail (refined in Gate 3)',
+    detailPlaceholder: 'Project detail',
     backToList: 'Back to project list',
-    knowledgeBasePending: 'Knowledge base selector wires up in Gate 5',
+    knowledgeBasePending: 'Select linked knowledge bases (optional)',
     notSet: 'Not set',
     columns: {
       name: 'Name',
@@ -126,7 +291,7 @@ export default {
       basic: 'Basic Info',
       knowledge: 'Linked Knowledge Bases',
       auditLog: 'Activity Log',
-      auditLogPlaceholder: 'Activity log will be wired up in Gate 4.',
+      auditLogPlaceholder: 'No activity recorded yet for this project. Every write (create, edit, stage transition, knowledge-base link change) is captured here and on the Audit Log page.',
     },
     validation: {
       nameRequired: 'Please enter a project name',
