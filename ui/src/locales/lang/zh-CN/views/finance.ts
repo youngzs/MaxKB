@@ -539,8 +539,10 @@ export default {
       manualPicker: {
         title: '手动添加文档',
         searchPlaceholder: '搜索知识库文档',
-        empty: '无可用文档',
+        empty: '没有匹配的文档（或已全部加入清单）',
+        noKb: '该项目尚未关联知识库，请先在『编辑项目』里添加关联知识库后再来。',
         confirm: '添加到当前需求项',
+        addedCount: '已添加 {n} 份文档',
       },
     },
     validation: {

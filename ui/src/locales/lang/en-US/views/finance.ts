@@ -568,8 +568,10 @@ export default {
       manualPicker: {
         title: 'Add document manually',
         searchPlaceholder: 'Search knowledge base documents',
-        empty: 'No documents available',
+        empty: 'No matching document (or all already in the list)',
+        noKb: 'This project has no linked knowledge base yet. Add one via "Edit project" first.',
         confirm: 'Add to this item',
+        addedCount: '{n} document(s) added',
       },
     },
     validation: {

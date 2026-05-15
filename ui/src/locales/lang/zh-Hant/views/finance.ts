@@ -539,8 +539,10 @@ export default {
       manualPicker: {
         title: '手動新增文檔',
         searchPlaceholder: '搜尋知識庫文檔',
-        empty: '無可用文檔',
+        empty: '沒有匹配的文檔（或已全部加入清單）',
+        noKb: '該項目尚未關聯知識庫，請先在『編輯項目』新增關聯知識庫後再來。',
         confirm: '新增到目前需求項',
+        addedCount: '已新增 {n} 份文檔',
       },
     },
     validation: {

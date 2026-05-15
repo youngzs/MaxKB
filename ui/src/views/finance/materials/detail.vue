@@ -393,12 +393,19 @@
       </template>
     </el-dialog>
 
-    <!-- Manual document picker drawer -->
+    <!--
+      Manual document picker drawer.
+      Lets the user search across documents in the project's linked
+      knowledge bases and add selected docs to the currently focused
+      requirement item. Was a UI-only stub before this gate; now wired to
+      ``KnowledgeApi.getDocumentList`` per KB and the materials task's
+      ``saveSelection`` store action.
+    -->
     <el-drawer
       v-model="manualPickerVisible"
       :title="$t('views.finance.materials.detail.manualPicker.title')"
       direction="rtl"
-      size="420px"
+      size="480px"
       append-to-body
     >
       <el-input
@@ -409,9 +416,72 @@
         clearable
         style="margin-bottom: 12px"
       />
-      <div class="finance-materials-detail__picker-hint">
+
+      <div v-if="pickerLoading" class="finance-materials-detail__picker-hint">
+        <el-skeleton :rows="4" animated />
+      </div>
+      <div
+        v-else-if="!projectKbIds.length"
+        class="finance-materials-detail__picker-hint"
+      >
+        {{ $t('views.finance.materials.detail.manualPicker.noKb') }}
+      </div>
+      <div
+        v-else-if="filteredPickerCandidates.length === 0"
+        class="finance-materials-detail__picker-hint"
+      >
         {{ $t('views.finance.materials.detail.manualPicker.empty') }}
       </div>
+      <ul v-else class="finance-materials-detail__picker-list">
+        <li
+          v-for="doc in filteredPickerCandidates"
+          :key="doc.document_id"
+          class="finance-materials-detail__picker-row"
+          :class="{
+            'is-selected': pickerSelectedIds.has(doc.document_id),
+          }"
+          @click="togglePickerSelect(doc.document_id)"
+        >
+          <el-checkbox
+            :model-value="pickerSelectedIds.has(doc.document_id)"
+            @click.stop
+            @change="() => togglePickerSelect(doc.document_id)"
+          />
+          <div class="finance-materials-detail__picker-info">
+            <div class="finance-materials-detail__picker-name">
+              {{ doc.document_name }}
+            </div>
+            <div class="finance-materials-detail__picker-meta">
+              <SensitivityBadge
+                :level="doc.sensitivity_level"
+                size="small"
+              />
+              <span class="finance-materials-detail__picker-kb">
+                {{ doc.knowledge_name }}
+              </span>
+            </div>
+          </div>
+        </li>
+      </ul>
+
+      <template #footer>
+        <div class="finance-materials-detail__picker-footer">
+          <el-button @click="manualPickerVisible = false">
+            {{ $t('common.cancel') }}
+          </el-button>
+          <el-button
+            type="primary"
+            :disabled="pickerSelectedIds.size === 0"
+            :loading="pickerSubmitting"
+            @click="confirmAddDocs"
+          >
+            {{ $t('views.finance.materials.detail.manualPicker.confirm') }}
+            <span v-if="pickerSelectedIds.size">
+              ({{ pickerSelectedIds.size }})
+            </span>
+          </el-button>
+        </div>
+      </template>
     </el-drawer>
 
     <!-- Email send log panel (Gate 5 Track B) -->
@@ -519,6 +589,18 @@ import type {
 import SensitivityBadge from '@/components/sensitivity-badge/index.vue'
 import SendMaterialsDialog from './components/SendMaterialsDialog.vue'
 import WorkflowRunDrawer from '../components/WorkflowRunDrawer.vue'
+import KnowledgeApi from '@/api/knowledge/knowledge'
+import DocumentApi from '@/api/knowledge/document'
+
+// Shape used by the manual document picker drawer (built from
+// knowledge.Document rows + the parent knowledge name).
+interface PickerCandidate {
+  document_id: string
+  document_name: string
+  knowledge_id: string
+  knowledge_name: string
+  sensitivity_level: SensitivityLevel
+}
 
 const route = useRoute()
 const router = useRouter()
@@ -537,6 +619,10 @@ const rejectFormRef = ref<FormInstance>()
 const rejectForm = ref({ comment: '' })
 const manualPickerVisible = ref(false)
 const pickerKeyword = ref('')
+const pickerLoading = ref(false)
+const pickerSubmitting = ref(false)
+const pickerCandidates = ref<PickerCandidate[]>([])
+const pickerSelectedIds = ref<Set<string>>(new Set())
 // Gate 7 Track B: workflow-run drawer + per-step progress.
 const workflowRunDrawerVisible = ref(false)
 const workspaceId = computed<string>(() => String(user.getWorkspaceId() || ''))
@@ -918,6 +1004,163 @@ const openInKnowledge = (doc: MatchedDocument) => {
   window.open(href, '_blank', 'noopener,noreferrer')
 }
 
+// ────────────────────────────────────────────────────────────────────────
+// Manual document picker
+// Reads the focused project's ``knowledge_base_ids`` whitelist, fetches the
+// document list from each KB in parallel, and lets the user check off rows
+// to add into ``matched_documents`` under the currently focused requirement
+// item. Selection writes go through ``store.saveSelection`` so the change
+// is persistent + the store list/selected stay in sync.
+
+const projectKbIds = computed<string[]>(() => {
+  if (!task.value) return []
+  const proj = projectStore.list.find((p) => p.id === task.value!.project_id)
+  return (proj?.knowledge_base_ids || []).map((id: any) => String(id))
+})
+
+const existingDocIdsSet = computed<Set<string>>(
+  () =>
+    new Set(
+      (task.value?.matched_documents || []).map((d) => String(d.document_id)),
+    ),
+)
+
+const filteredPickerCandidates = computed<PickerCandidate[]>(() => {
+  const kw = pickerKeyword.value.trim().toLowerCase()
+  return pickerCandidates.value.filter((d) => {
+    // Hide docs already on the task (any item) — re-adding would just dedupe.
+    if (existingDocIdsSet.value.has(d.document_id)) return false
+    if (!kw) return true
+    return d.document_name.toLowerCase().includes(kw)
+  })
+})
+
+async function loadPickerCandidates() {
+  const kbIds = projectKbIds.value
+  if (!kbIds.length) {
+    pickerCandidates.value = []
+    return
+  }
+  pickerLoading.value = true
+  try {
+    // First fetch KB names so each candidate row can show its origin KB.
+    // Cheap: single call returns all KBs in the workspace; we look up by id.
+    let kbNameById = new Map<string, string>()
+    try {
+      const wid = user.getWorkspaceId()
+      const res: any = await KnowledgeApi.getKnowledgeList({
+        folder_id: wid,
+      })
+      const kbs = Array.isArray(res?.data) ? res.data : []
+      kbNameById = new Map(kbs.map((k: any) => [String(k.id), String(k.name || k.id)]))
+    } catch (e) {
+      // Non-fatal — KB-name column degrades to id below.
+    }
+
+    // Fetch docs from each linked KB in parallel. A failed KB degrades to
+    // an empty list rather than failing the whole drawer.
+    const all = await Promise.all(
+      kbIds.map(async (kbId) => {
+        try {
+          const res: any = await DocumentApi.getDocumentList(kbId)
+          const docs = Array.isArray(res?.data) ? res.data : []
+          return docs.map(
+            (d: any): PickerCandidate => ({
+              document_id: String(d.id),
+              document_name: String(d.name || d.id),
+              knowledge_id: kbId,
+              knowledge_name: kbNameById.get(kbId) || kbId,
+              sensitivity_level:
+                (d.sensitivity_level as SensitivityLevel) || 'internal',
+            }),
+          )
+        } catch (e) {
+          return [] as PickerCandidate[]
+        }
+      }),
+    )
+    pickerCandidates.value = all.flat()
+  } finally {
+    pickerLoading.value = false
+  }
+}
+
+function togglePickerSelect(docId: string) {
+  const next = new Set(pickerSelectedIds.value)
+  if (next.has(docId)) next.delete(docId)
+  else next.add(docId)
+  pickerSelectedIds.value = next
+}
+
+async function confirmAddDocs() {
+  if (!task.value || !focusedItemKey.value) return
+  const wid = user.getWorkspaceId()
+  if (!wid) return
+  if (pickerSelectedIds.value.size === 0) {
+    manualPickerVisible.value = false
+    return
+  }
+
+  const toAdd = pickerCandidates.value.filter((c) =>
+    pickerSelectedIds.value.has(c.document_id),
+  )
+  if (toAdd.length === 0) return
+
+  // Append to matched_documents under the focused item key. Score 1.0 marks
+  // these as manually picked (auto-matched rows carry the cosine score).
+  const newMatched: MatchedDocument[] = [
+    ...(task.value.matched_documents || []),
+    ...toAdd.map((d) => ({
+      item_key: focusedItemKey.value,
+      document_id: d.document_id,
+      document_name: d.document_name,
+      sensitivity_level: d.sensitivity_level,
+      score: 1.0,
+      snippet: '',
+      ai_summary: '',
+    })),
+  ]
+  // Auto-select the just-added docs so the user doesn't have to tick the
+  // checkbox a second time in the middle pane.
+  const newSelected = Array.from(
+    new Set([
+      ...(task.value.selected_documents || []),
+      ...toAdd.map((d) => d.document_id),
+    ]),
+  )
+
+  pickerSubmitting.value = true
+  try {
+    await store.saveSelection(wid, task.value.id, {
+      selected_documents: newSelected,
+      matched_documents: newMatched,
+    })
+    MsgSuccess(
+      t('views.finance.materials.detail.manualPicker.addedCount', {
+        n: toAdd.length,
+      }),
+    )
+    pickerSelectedIds.value = new Set()
+    manualPickerVisible.value = false
+  } catch (e) {
+    // saveSelection's request wrapper already raises a global toast; we
+    // just stay on the drawer so the user can retry without re-picking.
+  } finally {
+    pickerSubmitting.value = false
+  }
+}
+
+// Drawer open lifecycle: clear last selection state, then refresh the
+// candidate list. Each open re-fetches so docs added to the KB from
+// elsewhere show up without a full page reload.
+watch(manualPickerVisible, (open) => {
+  if (!open) return
+  pickerSelectedIds.value = new Set()
+  pickerKeyword.value = ''
+  loadPickerCandidates()
+})
+// ────────────────────────────────────────────────────────────────────────
+
 // Reset focused doc when item changes.
 watch(focusedItemKey, () => {
   focusedDoc.value = null
@@ -1257,6 +1500,67 @@ onBeforeUnmount(() => {
     color: var(--el-text-color-placeholder);
     text-align: center;
     padding: 24px 0;
+  }
+
+  &__picker-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+  }
+
+  &__picker-row {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    padding: 10px 12px;
+    border: 1px solid var(--el-border-color-light);
+    border-radius: 6px;
+    margin-bottom: 8px;
+    cursor: pointer;
+    transition: background 0.15s ease, border-color 0.15s ease;
+
+    &:hover {
+      background: var(--el-fill-color-lighter);
+    }
+
+    &.is-selected {
+      background: var(--el-color-primary-light-9);
+      border-color: var(--el-color-primary-light-5);
+    }
+  }
+
+  &__picker-info {
+    flex: 1;
+    min-width: 0;
+  }
+
+  &__picker-name {
+    font-size: 13px;
+    color: var(--el-text-color-primary);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  &__picker-meta {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-top: 4px;
+  }
+
+  &__picker-kb {
+    color: var(--el-text-color-placeholder);
+    font-size: 12px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  &__picker-footer {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
   }
 }
 
