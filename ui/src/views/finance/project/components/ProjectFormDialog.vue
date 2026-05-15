@@ -121,10 +121,20 @@
         <el-select
           v-model="form.knowledge_base_ids"
           multiple
-          disabled
+          filterable
+          collapse-tags
+          collapse-tags-tooltip
           :placeholder="$t('views.finance.project.knowledgeBasePending')"
+          :loading="knowledgeLoading"
           style="width: 100%"
-        />
+        >
+          <el-option
+            v-for="kb in knowledgeOptions"
+            :key="kb.id"
+            :label="kb.name"
+            :value="kb.id"
+          />
+        </el-select>
       </el-form-item>
 
       <el-form-item :label="$t('views.finance.project.fields.description')">
@@ -159,6 +169,12 @@ import { MsgSuccess } from '@/utils/message'
 import { t } from '@/locales'
 import useStore from '@/stores'
 import type { Project, ProjectInput, ProjectStatus, ProjectType } from '@/api/finance/type'
+import KnowledgeApi from '@/api/knowledge/knowledge'
+
+interface KnowledgeOption {
+  id: string
+  name: string
+}
 
 interface Props {
   modelValue: boolean
@@ -178,6 +194,28 @@ const { user, financeProject } = useStore()
 
 const formRef = ref<FormInstance>()
 const loading = ref(false)
+const knowledgeLoading = ref(false)
+const knowledgeOptions = ref<KnowledgeOption[]>([])
+
+/**
+ * 加载工作空间下全部知识库供 select 渲染。
+ * folder_id 传 workspaceId 时后端按工作空间返回全部（与 chat-entry/index.vue 同一惯例）。
+ */
+async function loadKnowledgeList() {
+  const workspaceId = user.getWorkspaceId()
+  if (!workspaceId) return
+  knowledgeLoading.value = true
+  try {
+    const res: any = await KnowledgeApi.getKnowledgeList({ folder_id: workspaceId })
+    knowledgeOptions.value = Array.isArray(res?.data)
+      ? res.data.map((k: any) => ({ id: String(k.id), name: k.name }))
+      : []
+  } catch (e) {
+    knowledgeOptions.value = []
+  } finally {
+    knowledgeLoading.value = false
+  }
+}
 
 const dialogVisible = computed({
   get: () => props.modelValue,
@@ -267,6 +305,8 @@ watch(
   () => props.modelValue,
   (open) => {
     if (open) {
+      // 每次打开都重新拉一次，覆盖创建/删除知识库后的列表漂移
+      loadKnowledgeList()
       if (props.initial) {
         const init = props.initial
         form.value = {

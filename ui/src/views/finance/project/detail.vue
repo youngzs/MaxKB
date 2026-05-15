@@ -61,7 +61,7 @@
           class="mr-8"
           disable-transitions
         >
-          {{ id }}
+          {{ knowledgeNameMap[id] || id }}
         </el-tag>
       </div>
       <div v-else class="finance-project-detail__placeholder">
@@ -94,6 +94,7 @@ import { hasPermission } from '@/utils/permission'
 import { PermissionConst, RoleConst } from '@/utils/permission/data'
 import type { Project, ProjectStatus } from '@/api/finance/type'
 import ProjectFormDialog from './components/ProjectFormDialog.vue'
+import KnowledgeApi from '@/api/knowledge/knowledge'
 
 const route = useRoute()
 const router = useRouter()
@@ -102,6 +103,24 @@ const { user, financeProject: store } = useStore()
 const loading = ref(false)
 const dialogVisible = ref(false)
 const project = ref<Project | null>(null)
+// id → name 映射，给关联知识库 tag 渲染用；缺失时 fallback 到 id
+const knowledgeNameMap = ref<Record<string, string>>({})
+
+async function loadKnowledgeNames() {
+  const workspaceId = user.getWorkspaceId()
+  if (!workspaceId) return
+  try {
+    const res: any = await KnowledgeApi.getKnowledgeList({ folder_id: workspaceId })
+    const list = Array.isArray(res?.data) ? res.data : []
+    const map: Record<string, string> = {}
+    for (const k of list) {
+      if (k?.id != null) map[String(k.id)] = k.name
+    }
+    knowledgeNameMap.value = map
+  } catch (e) {
+    /* 失败时维持空映射，tag 退化展示 UUID — 仍可用 */
+  }
+}
 
 const canEdit = computed(() =>
   hasPermission(
@@ -173,7 +192,10 @@ const onSaveSuccess = (updated: Project) => {
 watch(
   () => route.params.pk,
   () => {
-    if (route.name === 'finance-project-detail') fetchDetail()
+    if (route.name === 'finance-project-detail') {
+      fetchDetail()
+      loadKnowledgeNames()
+    }
   },
   { immediate: true },
 )
