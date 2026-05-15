@@ -144,13 +144,19 @@ class XlsxSplitHandle(BaseSplitHandle):
         try:
             if type(limit) is str:
                 limit = int(limit)
-            workbook = openpyxl.load_workbook(io.BytesIO(buffer))
+            # data_only=True：读取 Excel/WPS 缓存的公式计算结果而非公式字符串本身，
+            # 避免 ="A1"&B1 这类公式被原样存入知识库导致检索失败。
+            # 注：若文件由未写入缓存值的工具生成（罕见），公式格会变成 None；
+            # 这是可接受降级 —— 无意义字符串污染索引比留空更差。
+            workbook = openpyxl.load_workbook(io.BytesIO(buffer), data_only=True)
             try:
                 image_dict: dict = xlsx_embed_cells_images(io.BytesIO(buffer))
                 save_image([item for item in image_dict.values()])
             except Exception:
                 image_dict = {}
-            worksheets = workbook.worksheets
+            # 只保留可见 sheet —— Excel/WPS 财报常用隐藏 sheet 存中间计算或老版本草稿
+            # （名字常见为 "1"/"2"/"详细附注"），这些不应进入知识库。
+            worksheets = [s for s in workbook.worksheets if s.sheet_state == 'visible']
             worksheets_size = len(worksheets)
             results = []
             for sheet in worksheets:
@@ -169,8 +175,8 @@ class XlsxSplitHandle(BaseSplitHandle):
 
     def get_content(self, file, save_image):
         try:
-            # 加载 Excel 文件
-            workbook = load_workbook(file)
+            # 加载 Excel 文件；data_only=True 读取公式缓存值，避免公式字符串污染输出
+            workbook = load_workbook(file, data_only=True)
             try:
                 image_dict: dict = xlsx_embed_cells_images(file)
                 if len(image_dict) > 0:
@@ -179,9 +185,11 @@ class XlsxSplitHandle(BaseSplitHandle):
                 maxkb_logger.error(f'Exception: {e}')
                 image_dict = {}
             md_tables = ''
-            # 遍历所有工作表
+            # 遍历所有工作表（跳过隐藏 sheet，详见 handle() 同名注释）
             for sheetname in workbook.sheetnames:
                 sheet = workbook[sheetname]
+                if sheet.sheet_state != 'visible':
+                    continue
                 rows = self.fill_merged_cells(sheet, image_dict)
                 if len(rows) == 0:
                     continue

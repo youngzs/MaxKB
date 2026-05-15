@@ -56,20 +56,24 @@ class XlsxParseQAHandle(BaseParseQAHandle):
     def handle(self, file, get_buffer, save_image):
         buffer = get_buffer(file)
         try:
-            workbook = openpyxl.load_workbook(io.BytesIO(buffer))
+            # data_only=True：读取公式缓存值，避免 QA 表里的公式被原样吃进库
+            workbook = openpyxl.load_workbook(io.BytesIO(buffer), data_only=True)
             try:
                 image_dict: dict = xlsx_embed_cells_images(io.BytesIO(buffer))
                 save_image([item for item in image_dict.values()])
             except Exception as e:
                 image_dict = {}
-            worksheets = workbook.worksheets
+            # 只处理可见 sheet —— 隐藏的中间表/草稿不应进入知识库
+            worksheets = [s for s in workbook.worksheets if s.sheet_state == 'visible']
             worksheets_size = len(worksheets)
-            return [row for row in
-                    [handle_sheet(file.name,
-                                  sheet,
-                                  image_dict) if worksheets_size == 1 and sheet.title == 'Sheet1' else handle_sheet(
-                        sheet.title, sheet, image_dict) for sheet
-                     in worksheets] if row is not None]
+            results = []
+            for sheet in worksheets:
+                # 单 sheet 且名为 Sheet1 时用文件名做文档名，否则用 sheet 名
+                name = file.name if worksheets_size == 1 and sheet.title == 'Sheet1' else sheet.title
+                row = handle_sheet(name, sheet, image_dict)
+                if row is not None:
+                    results.append(row)
+            return results
         except Exception as e:
             maxkb_logger.error(f"Error processing XLSX file {file.name}: {e}, {traceback.format_exc()}")
             return [{'name': file.name, 'paragraphs': []}]

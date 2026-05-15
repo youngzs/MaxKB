@@ -55,7 +55,8 @@ class XlsxParseTableHandle(BaseParseTableHandle):
     def handle(self, file, get_buffer, save_image):
         buffer = get_buffer(file)
         try:
-            wb = load_workbook(io.BytesIO(buffer))
+            # data_only=True：读取公式的缓存计算结果，避免公式字符串被存入知识库
+            wb = load_workbook(io.BytesIO(buffer), data_only=True)
             try:
                 image_dict: dict = xlsx_embed_cells_images(io.BytesIO(buffer))
                 save_image([item for item in image_dict.values()])
@@ -63,8 +64,11 @@ class XlsxParseTableHandle(BaseParseTableHandle):
                 image_dict = {}
             result = []
             for sheetname in wb.sheetnames:
-                paragraphs = []
                 ws = wb[sheetname]
+                # 跳过隐藏 sheet（财报常含 "1"/"2"/"详细附注" 这类中间表）
+                if ws.sheet_state != 'visible':
+                    continue
+                paragraphs = []
                 data = self.fill_merged_cells(ws, image_dict)
 
                 for row in data:
@@ -81,8 +85,8 @@ class XlsxParseTableHandle(BaseParseTableHandle):
 
     def get_content(self, file, save_image):
         try:
-            # 加载 Excel 文件
-            workbook = load_workbook(file)
+            # 加载 Excel 文件；data_only=True 读取公式缓存值，避免公式字符串污染输出
+            workbook = load_workbook(file, data_only=True)
             try:
                 image_dict: dict = xlsx_embed_cells_images(file)
                 if len(image_dict) > 0:
@@ -91,9 +95,11 @@ class XlsxParseTableHandle(BaseParseTableHandle):
                 maxkb_logger.error(f'Exception: {e}')
                 image_dict = {}
             md_tables = ''
-            # 遍历所有工作表
+            # 遍历所有工作表（跳过隐藏 sheet，详见 handle() 同名注释）
             for sheetname in workbook.sheetnames:
                 sheet = workbook[sheetname]
+                if sheet.sheet_state != 'visible':
+                    continue
                 rows = self.fill_merged_cells(sheet, image_dict)
                 if len(rows) == 0:
                     continue
