@@ -132,10 +132,15 @@ class OpenView(APIView):
                                     CompareConstants.AND),
                      RoleConstants.WORKSPACE_MANAGE.get_workspace_role())
     def get(self, request: Request, workspace_id: str, application_id: str):
-        return result.success(OpenChatSerializers(
-            data={'workspace_id': workspace_id, 'application_id': application_id,
-                  'chat_user_id': str(uuid.uuid7()), 'chat_user_type': ChatUserType.ANONYMOUS_USER,
-                  'debug': True}).open())
+        data = {'workspace_id': workspace_id, 'application_id': application_id,
+                'chat_user_id': str(uuid.uuid7()), 'chat_user_type': ChatUserType.ANONYMOUS_USER,
+                'debug': True}
+        # 会话级知识库隔离：前端可通过 knowledge_id_list 查询参数（逗号分隔）显式指定本次会话使用的知识库，
+        # 仅作用于当前会话，不会修改应用自身的知识库绑定配置。不传则保持原有行为（使用应用绑定的知识库）。
+        knowledge_id_list_param = request.query_params.get('knowledge_id_list', None)
+        if knowledge_id_list_param is not None:
+            data['knowledge_id_list'] = [kid for kid in knowledge_id_list_param.split(',') if kid]
+        return result.success(OpenChatSerializers(data=data).open())
 
 
 class ChatView(APIView):

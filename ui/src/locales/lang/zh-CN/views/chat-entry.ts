@@ -1,32 +1,19 @@
 export default {
   title: '对话',
-  subTitle: '选择一个智能体开始对话',
-  empty: {
-    noPublished: '当前还没有可对话的智能体',
-    noMatch: '没有匹配的智能体',
-    hint: '请先到「智能体」中创建并发布一个智能体，发布后即可在这里直接开聊。',
-    goCreate: '去创建智能体',
+  subTitle: '基于知识库的智能问答',
+  newChat: '新对话',
+  kb: {
+    label: '知识库',
+    placeholder: '选择知识库（可多选）',
+    emptyHint: '尚未选择知识库，当前回答仅基于模型自身知识。选择一个或多个知识库后即可基于资料问答。',
+    activeHint: '已关联 {n} 个知识库，将综合检索后统一作答',
+    noKnowledge: '当前工作空间还没有知识库，请先到「知识库」中创建并上传资料。',
+    updateFailed: '更新知识库失败，请重试',
   },
-  search: {
-    placeholder: '搜索智能体名称',
+  noApp: {
+    desc: '未找到可用的对话模型，无法初始化对话助手',
+    goModel: '去配置模型',
   },
-  filter: {
-    all: '全部',
-  },
-  card: {
-    chat: '开始对话',
-    simple: '简单',
-    workflow: '工作流',
-  },
-  hint: {
-    onlyPublished: '只显示已发布的智能体',
-  },
-  recent: {
-    title: '最近使用',
-    clear: '清空',
-    justNow: '刚刚',
-    minutesAgo: '{n} 分钟前',
-    hoursAgo: '{n} 小时前',
-    daysAgo: '{n} 天前',
-  },
+  dedicatedAppDesc: '「对话」入口专用的知识库问答助手，由系统自动维护。',
+  prologue: '你好，我是知识库问答助手。请在上方选择知识库后向我提问。',
 }

@@ -105,7 +105,8 @@ class ChatInfo:
                  knowledge_id_list: List[str],
                  exclude_document_id_list: list[str],
                  application_id: str,
-                 debug=False):
+                 debug=False,
+                 session_knowledge_locked: bool = False):
         """
         :param chat_id:                     对话id
         :param chat_user_id                 对话用户id
@@ -116,6 +117,10 @@ class ChatInfo:
         :param debug                        是否是调试
         :param ip_address:                  用户ip地址
         :param source:                      用户来源
+        :param session_knowledge_locked:    会话级知识库锁定。
+            True 表示 knowledge_id_list/exclude_document_id_list 已经由调用方按
+            会话级隔离逻辑确定，后续 get_application 不应再从应用绑定中重新读取覆盖；
+            False（默认）保持原有行为——SIMPLE 应用每次取应用当前的知识库绑定。
         """
         self.chat_id = chat_id
         self.chat_user_id = chat_user_id
@@ -129,6 +134,7 @@ class ChatInfo:
         self.ip_address = ip_address
         self.source = source
         self.debug = debug
+        self.session_knowledge_locked = session_knowledge_locked
 
     @staticmethod
     def get_no_references_setting(knowledge_setting, model_setting):
@@ -151,7 +157,9 @@ class ChatInfo:
                 '-create_time')[0:1].first()
             if not application:
                 raise ChatException(500, _("The application has not been published. Please use it after publishing."))
-        if application.type == ApplicationTypeChoices.SIMPLE.value:
+        if application.type == ApplicationTypeChoices.SIMPLE.value and not self.session_knowledge_locked:
+            # 默认行为：每次取应用当前的知识库绑定（chat-entry 的会话级隔离场景会跳过这里，
+            # 直接使用 open 时缓存的会话知识库列表）。
             # 数据集id列表
             knowledge_id_list = [str(row.target_id) for row in
                                  QuerySet(ResourceMapping).filter(source_id=self.application_id,
@@ -366,7 +374,9 @@ class ChatInfo:
             'exclude_document_id_list': self.exclude_document_id_list,
             'application_id': self.application_id,
             'chat_record_list': [self.chat_record_to_map(c) for c in self.chat_record_list][-20:],
-            'debug': self.debug
+            'debug': self.debug,
+            # 会话级知识库锁定标志——随 ChatInfo 一起缓存，决定后续 get_application 是否覆盖
+            'session_knowledge_locked': self.session_knowledge_locked,
         }
 
     def chat_record_to_map(self, chat_record):
@@ -417,7 +427,9 @@ class ChatInfo:
                      chat_info_dict.get('knowledge_id_list'),
                      chat_info_dict.get('exclude_document_id_list'),
                      chat_info_dict.get('application_id'),
-                     debug=chat_info_dict.get('debug'))
+                     debug=chat_info_dict.get('debug'),
+                     # 兼容历史缓存：缺失字段视为未锁定（沿用原有行为）
+                     session_knowledge_locked=bool(chat_info_dict.get('session_knowledge_locked', False)))
         c.chat_record_list = [ChatInfo.map_to_chat_record(c_r) for c_r in chat_info_dict.get('chat_record_list')]
         return c
 

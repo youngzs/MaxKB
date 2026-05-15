@@ -38,7 +38,7 @@ from common.handle.base_to_response import BaseToResponse
 from common.handle.impl.response.openai_to_response import OpenaiToResponse
 from common.handle.impl.response.system_to_response import SystemToResponse
 from common.utils.common import flat_map, get_file_content, is_valid_uuid
-from knowledge.models import Document, Paragraph
+from knowledge.models import Document, Paragraph, Knowledge
 from maxkb.conf import PROJECT_DIR
 from models_provider.models import Model, Status
 from models_provider.tools import get_model_instance_by_model_workspace_id
@@ -536,6 +536,11 @@ class OpenChatSerializers(serializers.Serializer):
     debug = serializers.BooleanField(required=True, label=_("Debug"))
     ip_address = serializers.CharField(required=False, label=_("IP Address"))
     source = serializers.JSONField(required=False, label=_("Source"))
+    # 会话级知识库隔离：若显式传入，则本次会话仅使用这些知识库（不修改应用自身的知识库绑定）。
+    # 不传则回退到应用已绑定的知识库，保持原有行为。
+    knowledge_id_list = serializers.ListField(required=False, allow_null=True,
+                                              child=serializers.CharField(allow_blank=True),
+                                              label=_("Knowledge id list"))
 
     def is_valid(self, *, raise_exception=False):
         super().is_valid(raise_exception=True)
@@ -584,19 +589,34 @@ class OpenChatSerializers(serializers.Serializer):
         ip_address = self.data.get("ip_address")
         source = self.data.get("source")
         debug = self.data.get("debug")
-        knowledge_id_list = [str(row.target_id) for row in
-                             QuerySet(ResourceMapping).filter(source_id=str(application_id),
-                                                              source_type='APPLICATION',
-                                                              target_type='KNOWLEDGE')]
+        # 会话级知识库隔离：显式传入 knowledge_id_list 时以其为准（仅取当前应用所属工作空间内、
+        # 且为合法 UUID 的知识库），否则回退到应用自身绑定的知识库。
+        # 使用 initial_data 而非 .data，避免 DRF 序列化对空列表 [] 的边角行为，
+        # 保证「显式传空 = 0 知识库」与「未传 = 回退」两种语义清晰可辨。
+        session_knowledge_id_list = self.initial_data.get('knowledge_id_list', None)
+        if session_knowledge_id_list is not None:
+            valid_knowledge_id_list = [kid for kid in session_knowledge_id_list if is_valid_uuid(kid)]
+            knowledge_id_list = [str(knowledge_id) for knowledge_id in
+                                 QuerySet(Knowledge).filter(
+                                     id__in=valid_knowledge_id_list,
+                                     workspace_id=application.workspace_id).values_list('id', flat=True)]
+        else:
+            knowledge_id_list = [str(row.target_id) for row in
+                                 QuerySet(ResourceMapping).filter(source_id=str(application_id),
+                                                                  source_type='APPLICATION',
+                                                                  target_type='KNOWLEDGE')]
 
         chat_id = str(uuid.uuid7())
+        # 会话级隔离场景下设置 session_knowledge_locked，避免 ChatInfo.get_application
+        # 在后续 chat 阶段再次从 ResourceMapping 读取并覆盖知识库列表。
         ChatInfo(chat_id, chat_user_id, chat_user_type, ip_address, source, knowledge_id_list,
                  [str(document.id) for document in
                   QuerySet(Document).filter(
                       knowledge_id__in=knowledge_id_list,
                       is_active=False)],
                  application_id,
-                 debug=debug).set_cache()
+                 debug=debug,
+                 session_knowledge_locked=(session_knowledge_id_list is not None)).set_cache()
         return chat_id
 
 

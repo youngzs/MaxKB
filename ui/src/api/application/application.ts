@@ -230,13 +230,22 @@ const topQuestions: (
  * 打开调试对话id
  * @param application_id 应用id
  * @param loading 加载器
+ * @param knowledge_id_list 可选——会话级知识库隔离。
+ *   传入则本次会话仅使用这些知识库；传入空数组表示本次会话不挂载知识库；
+ *   不传则保持后端原有行为（使用应用自身绑定的知识库）。
  * @returns
  */
-const open: (application_id: string, loading?: Ref<boolean>) => Promise<Result<string>> = (
-  application_id,
-  loading,
-) => {
-  return get(`${prefix.value}/${application_id}/open`, {}, loading)
+const open: (
+  application_id: string,
+  loading?: Ref<boolean>,
+  knowledge_id_list?: string[],
+) => Promise<Result<string>> = (application_id, loading, knowledge_id_list) => {
+  const params: Record<string, string> = {}
+  if (knowledge_id_list !== undefined) {
+    // 后端期望以英文逗号分隔；空数组传 '' 也作为"显式指定空知识库"语义。
+    params.knowledge_id_list = knowledge_id_list.join(',')
+  }
+  return get(`${prefix.value}/${application_id}/open`, params, loading)
 }
 
 /**
