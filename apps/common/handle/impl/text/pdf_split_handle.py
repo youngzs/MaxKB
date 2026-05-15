@@ -9,6 +9,7 @@
 
 import concurrent.futures
 import os
+import random
 import re
 import tempfile
 import time
@@ -105,10 +106,34 @@ _OCR_PAGE_TEXT_THRESHOLD = 10
 # 300 DPI 比 200 明显更锐利；配合 image_preprocess 的灰度化，字节体积仍可控。
 _OCR_PAGE_DPI = 300
 # 空白页 OCR 的并发度。每页一次视觉模型调用是 IO 密集型（等远端 LLM），
-# 用线程池并发能把 41 页 PDF 从 ~14 分钟串行降到 ~3 分钟。
+# 用线程池并发能把 41 页 PDF 从 ~14 分钟串行降到 ~5 分钟。
 # 每页调用本身已有 120s 硬超时（见 vision_llm_provider），并发池只需等所有
-# future 收敛即可，不再叠加外层超时。可用 MAXKB_OCR_CONCURRENCY 调整。
-_OCR_MAX_CONCURRENCY = int(os.environ.get('MAXKB_OCR_CONCURRENCY', '6'))
+# future 收敛即可，不再叠加外层超时。
+#
+# 默认 3：实测并发 6 会撞视觉模型的 TPM（每分钟 token）配额 —— 一整本
+# 41 页 PDF 同时 6 路在跑，远端会批量返回 429 "TPM limit reached"，配合过短
+# 的重试退避导致整页永久丢失（合同 PDF 曾因此从 23k 字掉到 17k 字）。3 路并发
+# 把瞬时 token 速率减半，叠加下面的限流退避基本能稳住。可用
+# MAXKB_OCR_CONCURRENCY 按 provider 实际配额上调/下调。
+_OCR_MAX_CONCURRENCY = int(os.environ.get('MAXKB_OCR_CONCURRENCY', '3'))
+# 命中视觉模型限流（429 / TPM / RPM 配额）时的重试退避秒数。
+# TPM/RPM 配额按"分钟"刷新，普通的 2s 退避只会立刻再次撞墙、白白消耗重试次数，
+# 所以限流退避必须拉到分钟级。可用 MAXKB_OCR_RATE_LIMIT_BACKOFF 调整。
+_OCR_RATE_LIMIT_BACKOFF = int(os.environ.get('MAXKB_OCR_RATE_LIMIT_BACKOFF', '30'))
+# 视觉模型限流错误的特征标记（不同 provider 文案不同，统一转小写后子串匹配）。
+# 命中任意一个即按"配额限流"处理：退避拉长到分钟级而不是 2s。
+_RATE_LIMIT_MARKERS = (
+    '429', 'rate limit', 'ratelimit', 'rate_limit', 'tpm', 'rpm',
+    'too many request', 'quota', 'limit reached',
+)
+
+
+def _is_rate_limit_error(err) -> bool:
+    """判断一个 OCR 异常是否是 provider 侧的配额限流。
+    限流和普通失败（连接复位、超时等）的最佳退避策略完全不同：
+    限流要等配额按分钟刷新，普通抖动 2s 即可。"""
+    s = str(err).lower()
+    return any(marker in s for marker in _RATE_LIMIT_MARKERS)
 
 default_pattern_list = [
     re.compile("(?<=^)# .*|(?<=\\n)# .*"),
@@ -215,15 +240,22 @@ class PdfSplitHandle(BaseSplitHandle):
         return ocr_provider.recognize(png_bytes)
 
     @staticmethod
-    def _ocr_pdf_page_with_retry(pdf_path, page_num, ocr_provider, retries=1):
+    def _ocr_pdf_page_with_retry(pdf_path, page_num, ocr_provider, retries=3):
         """带重试的单页 OCR。
         - _ocr_pdf_page 抛异常、或返回空/纯空白文本，都视为失败并重试
-        - 重试之间 sleep 2s，避开 provider 的瞬时抖动（限流 / 连接复位）
+        - 普通失败（连接复位、超时等瞬时抖动）：重试间隔 2s
+        - 限流失败（429 / TPM / RPM 配额）：重试间隔拉长到
+          _OCR_RATE_LIMIT_BACKOFF 秒（默认 30s）+ 0~10s 抖动 —— 配额按分钟刷新，
+          2s 退避只会立刻再次撞墙；抖动是为了打散并发线程"退避后同时重试"的
+          惊群效应，否则它们会成批再次触发限流
+        - retries 默认 3（共 4 次尝试）：限流场景下前几次大概率全是 429，
+          需要足够的尝试次数熬过配额窗口
         - 重试耗尽后记 warning 并返回 ''（让该页保持空白，绝不抛出）
         并发 OCR 循环调用的是本函数，而不是 _ocr_pdf_page。"""
         attempts = retries + 1
         last_err = None
         for attempt in range(1, attempts + 1):
+            rate_limited = False
             try:
                 ocr_text = PdfSplitHandle._ocr_pdf_page(pdf_path, page_num, ocr_provider)
                 if ocr_text and ocr_text.strip():
@@ -231,12 +263,18 @@ class PdfSplitHandle(BaseSplitHandle):
                 last_err = 'empty/whitespace-only result'
             except Exception as e:
                 last_err = e
+                rate_limited = _is_rate_limit_error(e)
             if attempt < attempts:
+                if rate_limited:
+                    delay = _OCR_RATE_LIMIT_BACKOFF + random.uniform(0, 10)
+                else:
+                    delay = 2
                 maxkb_logger.info(
                     f"PDF OCR page {page_num + 1} attempt {attempt}/{attempts} "
-                    f"failed ({last_err}); retrying in 2s"
+                    f"failed ({last_err}); retrying in {delay:.0f}s"
+                    f"{' (rate-limited)' if rate_limited else ''}"
                 )
-                time.sleep(2)
+                time.sleep(delay)
         maxkb_logger.warning(
             f"PDF OCR page {page_num + 1} gave up after {attempts} attempt(s): {last_err}"
         )
