@@ -9373,3 +9373,5 @@ msgstr "發布"
 
 msgid "token is required for EVENT triggers"
 msgstr "事件觸發器必須設定 token"
+msgid "Materials task has no requirement text or file"
+msgstr "材料任務尚未填寫需求文字或上傳需求檔案"

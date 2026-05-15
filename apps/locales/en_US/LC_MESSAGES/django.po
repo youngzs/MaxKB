@@ -9253,3 +9253,5 @@ msgstr ""
 
 msgid "token is required for EVENT triggers"
 msgstr ""
+msgid "Materials task has no requirement text or file"
+msgstr ""

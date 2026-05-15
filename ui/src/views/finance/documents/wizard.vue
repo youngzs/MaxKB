@@ -60,9 +60,27 @@
         </el-card>
       </div>
 
-      <div v-if="!templateStore.loading && activeTemplates.length === 0" class="finance-wizard__empty">
-        {{ $t('views.finance.documentsLib.wizard.noTemplate') }}
-      </div>
+      <!-- Step-1 empty state: no templates uploaded yet. Surface a hard
+           dead-end here (the wizard literally can't continue without a
+           template) plus a one-click jump to the template library so the
+           user doesn't have to hunt for it in the side menu. -->
+      <el-empty
+        v-if="!templateStore.loading && activeTemplates.length === 0"
+        :image-size="100"
+        class="finance-wizard__empty"
+      >
+        <template #description>
+          <div class="finance-empty-state">
+            <h3>{{ $t('views.finance.documentsLib.wizard.noTemplateTitle') }}</h3>
+            <p class="text-secondary">
+              {{ $t('views.finance.documentsLib.wizard.noTemplate') }}
+            </p>
+            <el-button type="primary" @click="goToTemplateLibrary">
+              {{ $t('views.finance.documentsLib.wizard.noTemplateCta') }}
+            </el-button>
+          </div>
+        </template>
+      </el-empty>
     </el-card>
 
     <!-- Step 2: select project -->
@@ -494,6 +512,10 @@ const onProjectStatusChange = (val: string | undefined) => {
 
 const goBack = () => {
   router.push({ name: 'finance-documents' })
+}
+
+const goToTemplateLibrary = () => {
+  router.push({ name: 'finance-template' })
 }
 
 const initPlaceholderValues = () => {
