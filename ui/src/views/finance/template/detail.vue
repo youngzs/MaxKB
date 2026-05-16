@@ -29,7 +29,17 @@
           />
         </h2>
       </div>
-      <div class="flex" style="gap: 8px">
+      <div class="flex" style="gap: 8px; align-items: center">
+        <el-button
+          v-if="template"
+          link
+          type="primary"
+          :loading="downloadLoading"
+          @click="onDownload"
+        >
+          <AppIcon iconName="app-download" class="mr-4" />
+          下载此模板
+        </el-button>
         <el-tag
           v-if="template"
           :type="scenarioTagType(template.scenario)"
@@ -123,17 +133,38 @@
             <el-switch v-model="row.required" :disabled="!canEdit" />
           </template>
         </el-table-column>
-        <el-table-column
-          :label="$t('views.finance.templateLib.placeholderEditor.aiHint')"
-          min-width="260"
-        >
+        <el-table-column min-width="280">
+          <template #header>
+            <span style="display: inline-flex; align-items: center; gap: 4px">
+              AI 填充提示词（可选）
+              <el-tooltip placement="top">
+                <template #content>
+                  <div style="max-width: 320px; line-height: 1.6">
+                    <strong>这一列只对"AI 一键填充"生效，人工填表时无需关心，留空即可。</strong>
+                    <br />
+                    填了什么：会作为 system prompt 的一部分传给大模型，例如填
+                    <code style="background: #444; padding: 1px 4px; border-radius: 3px">
+                      公司全称带"有限公司"
+                    </code>
+                    AI 就不会输出简称。
+                    <br /><br />
+                    不会发生：<strong>不会</strong>直接替换占位符 ——
+                    用户在生成文档时输入的值或 AI 生成的值才是最终内容。
+                  </div>
+                </template>
+                <el-icon style="font-size: 14px; color: var(--el-color-info); cursor: help">
+                  <QuestionFilled />
+                </el-icon>
+              </el-tooltip>
+            </span>
+          </template>
           <template #default="{ row }">
             <el-input
               v-model="row.ai_hint"
               type="textarea"
               :rows="2"
               :disabled="!canEdit"
-              :placeholder="$t('views.finance.templateLib.placeholderEditor.aiHint') + '...'"
+              :placeholder="$t('views.finance.templateLib.placeholderEditor.aiHintPlaceholder')"
             />
           </template>
         </el-table-column>
@@ -158,6 +189,7 @@
         {{ $t('views.finance.templateLib.placeholderEditor.empty') }}
       </div>
 
+      <!-- sticky 底栏：表格 13+ 行时整页可滚动，但保存按钮始终钉在视口底部 -->
       <div v-if="canEdit" class="finance-template-detail__actions">
         <el-button type="primary" :loading="saving" @click="handleSave">
           {{ $t('views.finance.templateLib.placeholderEditor.save') }}
@@ -182,6 +214,8 @@ import type {
   TemplateScenario,
   TemplateUpdate,
 } from '@/api/finance/type'
+import { downloadTemplate } from '@/api/finance/template'
+import { QuestionFilled } from '@element-plus/icons-vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -189,8 +223,23 @@ const { user, financeTemplate: store } = useStore()
 
 const loading = ref(false)
 const saving = ref(false)
+const downloadLoading = ref(false)
 const template = ref<Template | null>(null)
 const editingName = ref(false)
+
+async function onDownload() {
+  const workspaceId = user.getWorkspaceId()
+  if (!workspaceId || !template.value) return
+  downloadLoading.value = true
+  try {
+    // 文件名 fallback —— Content-Disposition 缺失时退化用模板名；
+    // 后端 RFC 5987 头通常会覆盖这个值。
+    const safeName = (template.value.name || 'template').replace(/[\\/:*?"<>|]/g, '_')
+    await downloadTemplate(workspaceId, template.value.id, `${safeName}.docx`)
+  } finally {
+    downloadLoading.value = false
+  }
+}
 
 interface EditableForm {
   name: string
@@ -389,7 +438,15 @@ onMounted(() => {
   &__actions {
     display: flex;
     justify-content: flex-end;
+    // sticky 到视口底部 —— 长表格不会把保存按钮顶出可视范围。
+    // background + border-top 防止下方内容透出来。
+    position: sticky;
+    bottom: 0;
+    background: var(--el-bg-color);
+    padding: 12px 0;
     margin-top: 16px;
+    border-top: 1px solid var(--el-border-color-lighter);
+    z-index: 1;
   }
 }
 </style>

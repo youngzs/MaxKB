@@ -84,6 +84,130 @@ def store_template_bytes(file_bytes: bytes, file_name: str) -> str:
     return _save_bytes(file_bytes, file_name, _FILE_SOURCE_ID_TEMPLATE)
 
 
+def load_template_bytes(oss_key: str) -> bytes:
+    """Public re-export of `_load_bytes` for callers fetching a stored template."""
+    return _load_bytes(oss_key)
+
+
+def build_sample_template_bytes() -> bytes:
+    """
+    Generate a sample .docx demonstrating docxtpl Jinja-style placeholder syntax.
+
+    Naming suffix → type-inference hints (see service/template_parser._infer_type):
+      *_amount, *_count, *_number, *_qty, *_total       → number
+      *_date, *_at, *_time, *_deadline, *_expiry        → date
+      *_desc, *_description, *_summary, *_analysis,
+      *_reason, *_notes, *_remark, *_content            → long_text
+      anything else                                     → text
+
+    The sample is built fresh on each call (no fixture file on disk) so its
+    contents always reflect the current placeholder/type contract. Pure
+    python-docx — no template engine involvement.
+    """
+    from docx import Document
+    from docx.shared import Pt
+
+    doc = Document()
+
+    title = doc.add_heading('融资项目模板示例 / Finance Project Template — Sample', level=0)
+    title.alignment = 1  # WD_ALIGN_PARAGRAPH.CENTER
+
+    intro = doc.add_paragraph()
+    intro_run = intro.add_run(
+        '本文件演示 docxtpl Jinja 风格占位符语法。把"双花括号包裹的变量名"'
+        '（见下文正文示例）替换成你自己的 key，其余文字按需修改后保存即可上传。'
+    )
+    # 注意：**不能**在 prose 里写裸 `{{ ... }}` 之类的语法演示 ——
+    # docxtpl 会把整份文档喂给 Jinja 解析，`...` 不是合法标识符，整个上传流程
+    # 会被 `unexpected '.'` 卡住。所有 `{{ var }}` 字面量都必须是**真实**占位符。
+    intro_run.font.size = Pt(10)
+
+    # 设计说明（**勿删，给维护者**）：
+    #
+    # docxtpl 抽取变量时把整个 docx XML 喂给 Jinja2 env.parse(xml)，对 *任何*
+    # 出现在文档里的 Jinja 语法都尝试解析 —— 包括"演示语法"的字面文本。一旦
+    # python-docx 把 `{% %}` 块跨 <w:r> run 拆开（中文/英文/标点常触发），
+    # 块尾尖括号或 dotted-access 会在 XML 标签夹缝中产出无效片段，
+    # `unexpected '.'` / `unexpected '<'` 直接让上传失败。
+    #
+    # 经验上 **样本 docx 里只放 `{{ var }}` 单变量替换** 才稳定。`{% if %}` /
+    # `{% for %}` / 过滤器 / dotted-access 这些进阶语法放到前端帮助面板讲
+    # （那里只是 HTML 字符，不经 docxtpl 解析）。
+    #
+    # ---- 占位符使用说明（**纯文字**，不含任何 Jinja 字面量） ----
+    doc.add_heading('一、占位符使用说明', level=1)
+    p = doc.add_paragraph()
+    p.add_run('1. 单变量替换：').bold = True
+    p.add_run('用双花括号包裹变量名，前后各加一个空格。具体写法参见下方"三、模板正文"。')
+    p2 = doc.add_paragraph()
+    p2.add_run('2. 变量命名规则：').bold = True
+    p2.add_run(
+        '只允许字母、数字、下划线，首字符必须是字母。后缀决定推断的字段类型（详见第二节）。'
+    )
+    p3 = doc.add_paragraph()
+    p3.add_run('3. 进阶语法（条件 / 循环 / 过滤器）：').bold = True
+    p3.add_run(
+        '本样本只演示单变量替换 —— 进阶语法跨 run 拆分时容易让 docxtpl 解析失败。'
+        '需要时请参考上传页的"占位符语法帮助"面板或 docxtpl 官方文档。'
+    )
+
+    # ---- 类型推断表 ----
+    doc.add_heading('二、命名后缀决定字段类型', level=1)
+    typetable = doc.add_table(rows=1, cols=3)
+    typetable.style = 'Light Grid Accent 1'
+    th = typetable.rows[0].cells
+    th[0].text = '后缀'
+    th[1].text = '推断类型'
+    th[2].text = '示例 key'
+    type_rows = [
+        ('_amount / _count / _number / _qty / _total', 'number', 'target_amount'),
+        ('_date / _at / _time / _deadline / _expiry', 'date', 'report_date'),
+        ('_desc / _description / _summary / _analysis / _reason / _notes / _remark / _content', 'long_text', 'risk_analysis'),
+        ('（其他）', 'text', 'project_name'),
+    ]
+    for suf, typ, exa in type_rows:
+        r = typetable.add_row().cells
+        r[0].text = suf
+        r[1].text = typ
+        r[2].text = exa
+
+    # ---- 可直接编辑的模板正文 ----
+    doc.add_heading('三、模板正文（可直接修改后上传）', level=1)
+
+    doc.add_heading('项目概览', level=2)
+    doc.add_paragraph('项目名称：{{ project_name }}')
+    doc.add_paragraph('借款主体：{{ borrower_name }}')
+    doc.add_paragraph('融资类型：{{ project_type }}')
+    doc.add_paragraph('行业代码：{{ industry_code }}')
+
+    doc.add_heading('金额与时间', level=2)
+    doc.add_paragraph('目标金额：{{ target_amount }} 元')
+    doc.add_paragraph('期限月数：{{ duration_months }}')
+    doc.add_paragraph('报告日期：{{ report_date }}')
+    doc.add_paragraph('预计到账：{{ expected_close_date }}')
+
+    doc.add_heading('描述与分析（长文本）', level=2)
+    doc.add_paragraph('项目描述：{{ project_description }}')
+    doc.add_paragraph('风险分析：{{ risk_analysis }}')
+    doc.add_paragraph('还款来源说明：{{ repayment_source_notes }}')
+
+    doc.add_heading('其他说明', level=2)
+    doc.add_paragraph('抵押情况说明：{{ collateral_summary }}')
+    doc.add_paragraph('材料清单概要：{{ materials_summary }}')
+
+    foot = doc.add_paragraph()
+    foot.add_run(
+        '提示：保存为 .docx（不要存成 .doc）后回到上传页继续。'
+        '占位符的标签、类型、是否必填可在上传后的详情页继续编辑。'
+        '若要使用条件块、循环或属性访问等高级 Jinja 语法，请在 Word 里把整段表达式选中'
+        '设为同一字体（同一 <w:r> run）后再上传，避免 docxtpl 跨 run 解析失败。'
+    ).italic = True
+
+    out = BytesIO()
+    doc.save(out)
+    return out.getvalue()
+
+
 @log_slow(threshold_ms=1000, name='finance.document_generator.render_template')
 def render_template(template_oss_key: str, values: dict, output_filename: str) -> str:
     """

@@ -31,10 +31,22 @@ urlpatterns = [
         views.DocumentTemplateListView.as_view(),
         name='template_list',
     ),
+    # `sample` is a literal path —— must come BEFORE the <uuid:pk> route
+    # so the dispatcher doesn't try to coerce "sample" into a UUID.
+    path(
+        'workspace/<str:workspace_id>/template/sample',
+        views.DocumentTemplateSampleView.as_view(),
+        name='template_sample',
+    ),
     path(
         'workspace/<str:workspace_id>/template/<uuid:pk>',
         views.DocumentTemplateDetailView.as_view(),
         name='template_detail',
+    ),
+    path(
+        'workspace/<str:workspace_id>/template/<uuid:pk>/download',
+        views.DocumentTemplateDownloadView.as_view(),
+        name='template_download',
     ),
     # ---- Gate 3 Track A: document generations ----
     # NOTE: the `ai-fill` collection route is registered BEFORE the

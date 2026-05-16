@@ -16,7 +16,12 @@ from .document_generation import (
     DocumentGenerationRevokeView,
 )
 from .document_sensitivity import DocumentSensitivityView
-from .document_template import DocumentTemplateDetailView, DocumentTemplateListView
+from .document_template import (
+    DocumentTemplateDetailView,
+    DocumentTemplateDownloadView,
+    DocumentTemplateListView,
+    DocumentTemplateSampleView,
+)
 from .email_send_log import EmailSendLogListView
 from .email_template import EmailTemplateDetailView, EmailTemplateListView
 from .materials_send import MaterialsTaskSendView
@@ -59,6 +64,8 @@ __all__ = [
     'FinanceProjectDetailView',
     'DocumentTemplateListView',
     'DocumentTemplateDetailView',
+    'DocumentTemplateSampleView',
+    'DocumentTemplateDownloadView',
     'DocumentGenerationListView',
     'DocumentGenerationDetailView',
     'DocumentGenerationConfirmView',

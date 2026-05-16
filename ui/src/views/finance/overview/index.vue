@@ -240,12 +240,20 @@ async function refresh() {
   // is independent — a 403 or 5xx on one degrades to "—" without blocking
   // the others. We deliberately do not Promise.all so a slow audit-log
   // query doesn't block the fast project list.
-  // "In-flight" is approximated as projects in the engaging stage; refine
-  // when the backend grows a multi-status filter (today it accepts a
-  // single status only).
-  const inFlightStatus: ProjectStatus = 'engaging'
-  listProjects(wid, { size: 1, status: inFlightStatus })
-    .then((res) => setKpi('inFlight', res?.data?.total ?? 0))
+  //
+  // "In-flight" = anything not yet 'landed' or 'terminated'. The backend
+  // currently filters by a single status string, so we fan out 3 size:1
+  // queries in parallel and sum totals. Each call returns instantly (just
+  // a COUNT), so the latency penalty is negligible (single round-trip,
+  // 3 cheap queries on the server).
+  const inFlightStatuses: ProjectStatus[] = ['preparing', 'materials', 'engaging']
+  Promise.all(
+    inFlightStatuses.map((s) => listProjects(wid, { size: 1, status: s })),
+  )
+    .then((results) => {
+      const total = results.reduce((sum, r) => sum + (r?.data?.total ?? 0), 0)
+      setKpi('inFlight', total)
+    })
     .catch(() => setKpi('inFlight', null))
 
   listMaterialsTasks(wid, { size: 1, status: 'pending_review' })

@@ -62,6 +62,57 @@
           </template>
         </el-upload>
       </el-form-item>
+
+      <!-- 占位符语法帮助 + sample 下载。`v-pre` 跳过 Vue 模板插值，
+           这样 `{{ project_name }}` 这种 Jinja 字面量才能原样渲染。 -->
+      <el-form-item>
+        <div class="template-help">
+          <div class="template-help__actions">
+            <el-button
+              type="primary"
+              link
+              :loading="sampleLoading"
+              @click="onDownloadSample"
+            >
+              <AppIcon iconName="app-download" class="mr-4" />
+              下载示例模板（.docx）
+            </el-button>
+            <el-button link @click="helpExpanded = !helpExpanded">
+              {{ helpExpanded ? '收起' : '展开' }}占位符语法
+            </el-button>
+          </div>
+
+          <transition name="el-collapse-transition">
+            <div v-show="helpExpanded" class="template-help__panel" v-pre>
+              <p><strong>1. 单变量替换</strong> —— 用双花括号包裹变量名，前后留空格：</p>
+              <p class="template-help__code">项目名称：{{ project_name }}</p>
+
+              <p><strong>2. 变量后缀决定字段类型</strong>（上传后可在详情页改）：</p>
+              <ul>
+                <li><code>*_amount / *_count / *_number / *_total</code> → <strong>number</strong></li>
+                <li><code>*_date / *_at / *_time / *_deadline</code> → <strong>date</strong></li>
+                <li><code>*_desc / *_summary / *_analysis / *_notes / *_content</code> → <strong>long_text</strong></li>
+                <li>其他 → <strong>text</strong></li>
+              </ul>
+
+              <p><strong>3. 条件块</strong>（同一段落里整段同一字体，否则跨 run 会解析失败）：</p>
+              <p class="template-help__code">{% if has_collateral %}有抵押{% else %}无抵押{% endif %}</p>
+
+              <p><strong>4. 循环</strong>（推荐传字符串数组，避免 <code>item.name</code> 这种属性访问）：</p>
+              <p class="template-help__code">{% for name in material_names %}• {{ name }}{% endfor %}</p>
+
+              <p><strong>5. 过滤器</strong>（Jinja 标准）：</p>
+              <p class="template-help__code">金额：{{ amount | round(2) }} 元</p>
+
+              <p style="color: var(--el-color-warning); margin-top: 8px">
+                ⚠️ 进阶语法（条件/循环/过滤器/属性访问）必须把整段表达式放在 Word 里同一 run 内
+                —— 在 Word 中选中整段后重设为同一字体即可。否则 docxtpl 会跨 run 拼接 XML，
+                极易撞 <code>unexpected '.'</code> 等解析错误。
+              </p>
+            </div>
+          </transition>
+        </div>
+      </el-form-item>
     </el-form>
 
     <template #footer>
@@ -84,6 +135,7 @@ import { MsgError, MsgSuccess } from '@/utils/message'
 import { t } from '@/locales'
 import useStore from '@/stores'
 import type { Template, TemplateScenario } from '@/api/finance/type'
+import { downloadSampleTemplate } from '@/api/finance/template'
 
 interface Props {
   modelValue: boolean
@@ -106,6 +158,19 @@ const dialogVisible = computed({
 const formRef = ref<FormInstance>()
 const uploadRef = ref<{ clearFiles: () => void } | null>(null)
 const loading = ref(false)
+const sampleLoading = ref(false)
+const helpExpanded = ref(false)
+
+async function onDownloadSample() {
+  const workspaceId = user.getWorkspaceId()
+  if (!workspaceId) return
+  sampleLoading.value = true
+  try {
+    await downloadSampleTemplate(workspaceId)
+  } finally {
+    sampleLoading.value = false
+  }
+}
 
 interface UploadForm {
   name: string
@@ -262,5 +327,40 @@ const handleSubmit = async () => {
   display: flex;
   justify-content: flex-end;
   gap: 8px;
+}
+.template-help {
+  width: 100%;
+  &__actions {
+    display: flex;
+    gap: 12px;
+    align-items: center;
+  }
+  &__panel {
+    margin-top: 8px;
+    padding: 12px 16px;
+    background: var(--el-fill-color-light);
+    border-radius: 6px;
+    font-size: 13px;
+    line-height: 1.7;
+    p {
+      margin: 4px 0;
+    }
+    ul {
+      margin: 4px 0 8px 20px;
+    }
+    code {
+      background: var(--el-fill-color);
+      padding: 1px 4px;
+      border-radius: 3px;
+      font-family: 'Courier New', monospace;
+    }
+  }
+  &__code {
+    font-family: 'Courier New', monospace;
+    background: var(--el-fill-color);
+    padding: 4px 8px;
+    border-radius: 3px;
+    display: inline-block;
+  }
 }
 </style>

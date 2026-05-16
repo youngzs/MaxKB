@@ -19,6 +19,9 @@ from common.auth import TokenAuth
 from common.auth.authentication import has_permissions
 from common.constants.permission_constants import PermissionConstants, RoleConstants
 from common.exception.app_exception import AppApiException, NotFound404
+from django.http import HttpResponse
+import urllib.parse
+
 from finance.models import DocumentTemplate, FinanceAuditAction, FinanceAuditTargetType
 from finance.serializers.document_template import (
     DocumentTemplateOutputSerializer,
@@ -26,8 +29,23 @@ from finance.serializers.document_template import (
     DocumentTemplateUploadSerializer,
 )
 from finance.service.audit import audit_log
-from finance.service.document_generator import store_template_bytes
+from finance.service.document_generator import (
+    build_sample_template_bytes,
+    load_template_bytes,
+    store_template_bytes,
+)
 from finance.service.template_parser import extract_placeholders
+
+
+def _docx_attachment_response(docx_bytes: bytes, filename: str) -> HttpResponse:
+    """Build a standard ``Content-Disposition: attachment`` response for a .docx body."""
+    response = HttpResponse(docx_bytes, content_type=_DOCX_MIME)
+    encoded = urllib.parse.quote(filename)
+    # RFC 5987 — keep non-ASCII filenames intact across browsers.
+    response['Content-Disposition'] = (
+        f"attachment; filename=\"{encoded}\"; filename*=UTF-8''{encoded}"
+    )
+    return response
 
 _DEFAULT_PAGE = 1
 _DEFAULT_SIZE = 20
@@ -221,3 +239,64 @@ class DocumentTemplateDetailView(APIView):
         instance.is_deleted = True
         instance.save(update_fields=['is_deleted', 'updated_at'])
         return result.success({'id': str(instance.id)})
+
+
+class DocumentTemplateSampleView(APIView):
+    """
+    GET a freshly generated sample .docx demonstrating placeholder syntax.
+
+    No template id required — built on the fly from python-docx so it always
+    reflects the current placeholder/type contract. Auth: workspace member.
+    """
+
+    authentication_classes = [TokenAuth]
+
+    @extend_schema(
+        methods=['GET'],
+        summary=_('Download sample document template'),
+        operation_id=_('Download sample document template'),  # type: ignore
+        tags=[_('Finance')],  # type: ignore
+    )
+    @has_permissions(
+        PermissionConstants.FINANCE_READ.get_workspace_permission(),
+        RoleConstants.USER.get_workspace_role(),
+        RoleConstants.WORKSPACE_MANAGE.get_workspace_role(),
+    )
+    def get(self, request: Request, workspace_id):  # noqa: ARG002 — workspace_id reserved for future per-ws templates
+        docx_bytes = build_sample_template_bytes()
+        return _docx_attachment_response(docx_bytes, 'finance-template-sample.docx')
+
+
+class DocumentTemplateDownloadView(APIView):
+    """
+    GET the previously uploaded template's raw .docx so users can download,
+    edit (e.g. tweak placeholders), and upload again as a new template
+    (or replace once that endpoint exists).
+    """
+
+    authentication_classes = [TokenAuth]
+
+    @extend_schema(
+        methods=['GET'],
+        summary=_('Download uploaded document template'),
+        operation_id=_('Download uploaded document template'),  # type: ignore
+        tags=[_('Finance')],  # type: ignore
+    )
+    @has_permissions(
+        PermissionConstants.FINANCE_READ.get_workspace_permission(),
+        RoleConstants.USER.get_workspace_role(),
+        RoleConstants.WORKSPACE_MANAGE.get_workspace_role(),
+    )
+    @audit_log(action=FinanceAuditAction.DOWNLOAD, target_type=FinanceAuditTargetType.DOC_TEMPLATE)
+    def get(self, request: Request, workspace_id, pk):
+        instance = DocumentTemplate.objects.filter(
+            id=pk, workspace_id=workspace_id, is_deleted=False
+        ).first()
+        if instance is None:
+            raise NotFound404(404, _('Template not found'))
+        try:
+            docx_bytes = load_template_bytes(instance.docx_oss_key)
+        except ValueError as e:
+            raise AppApiException(500, _('Template file missing in storage: %s') % str(e)) from e
+        filename = f'{instance.name or str(instance.id)}.docx'
+        return _docx_attachment_response(docx_bytes, filename)

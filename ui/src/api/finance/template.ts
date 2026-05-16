@@ -1,6 +1,6 @@
 import { type Ref } from 'vue'
 import type { Result } from '@/request/Result'
-import { get, post, put, del } from '@/request/index'
+import { del, exportFile, get, post, put } from '@/request/index'
 import type {
   PageResult,
   Template,
@@ -82,10 +82,58 @@ export const deleteTemplate: (
   return del(`${buildPrefix(workspaceId)}/${id}`, undefined, {}, loading)
 }
 
+/**
+ * GET /finance/workspace/<wid>/template/sample
+ * Streams a freshly-built sample .docx demonstrating placeholder syntax.
+ * Uses the shared `exportFile` helper so backend JSON errors still surface
+ * via MsgError instead of corrupting the saved blob.
+ */
+export const downloadSampleTemplate: (
+  workspaceId: string,
+  fallbackFilename?: string,
+  loading?: Ref<boolean>,
+) => Promise<boolean> = (
+  workspaceId,
+  fallbackFilename = 'finance-template-sample.docx',
+  loading,
+) => {
+  return exportFile(
+    fallbackFilename,
+    `${buildPrefix(workspaceId)}/sample`,
+    undefined,
+    loading,
+  )
+}
+
+/**
+ * GET /finance/workspace/<wid>/template/<pk>/download
+ * Streams the previously uploaded .docx so users can edit + reupload.
+ */
+export const downloadTemplate: (
+  workspaceId: string,
+  id: string,
+  fallbackFilename?: string,
+  loading?: Ref<boolean>,
+) => Promise<boolean> = (
+  workspaceId,
+  id,
+  fallbackFilename = 'template.docx',
+  loading,
+) => {
+  return exportFile(
+    fallbackFilename,
+    `${buildPrefix(workspaceId)}/${id}/download`,
+    undefined,
+    loading,
+  )
+}
+
 export default {
   listTemplates,
   getTemplate,
   uploadTemplate,
   updateTemplate,
   deleteTemplate,
+  downloadSampleTemplate,
+  downloadTemplate,
 }
