@@ -196,7 +196,7 @@ export default {
   },
   overviewKpis: {
     inFlight: 'In-flight projects',
-    inFlightHint: 'Projects currently in the engaging stage',
+    inFlightHint: 'Projects in preparing / materials / engaging stages (not landed or terminated)',
     pendingReview: 'Pending reviews',
     pendingReviewHint: 'Materials tasks awaiting approval',
     docsTotal: 'Documents generated',
@@ -455,6 +455,36 @@ export default {
         templateRequired: 'Please select a template',
         projectRequired: 'Please select a project',
         placeholderRequired: 'Please fill required placeholder: {label}',
+      },
+      // Built-in aliases used when a template was uploaded without admin
+      // metadata (``label == key`` in DB). See zh-CN counterpart for the
+      // full rationale. Each entry's English-side display reuses the
+      // canonical field name; the form remains usable but admins should
+      // still customise via the template detail page for polish.
+      fieldAliases: {
+        project_name: 'Project name',
+        project_code: 'Project code',
+        project_type: 'Financing type',
+        project_description: 'Project background',
+        applicant: 'Applicant',
+        borrower_name: 'Borrower entity',
+        counterparty: 'Counterparty (financial institution)',
+        financing_type: 'Financing type',
+        target_amount: 'Target amount',
+        amount: 'Amount',
+        currency: 'Currency',
+        duration_months: 'Tenor (months)',
+        expected_close_date: 'Expected close date',
+        industry_code: 'Industry code',
+        region: 'Region',
+        risk_level: 'Risk level',
+        collateral_summary: 'Collateral / guarantee summary',
+        repayment_source_notes: 'Repayment source notes',
+        materials_summary: 'Materials overview',
+        fund_purpose: 'Use of funds',
+        background: 'Background',
+        risk_assessment: 'Risk assessment',
+        repayment_source: 'Repayment source',
       },
     },
   },

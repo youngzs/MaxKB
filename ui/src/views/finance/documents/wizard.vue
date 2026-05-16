@@ -194,8 +194,8 @@
           :required="ph.required"
         >
           <template #label>
-            <span>{{ ph.label || ph.key }}</span>
-            <code class="finance-wizard__key">{{ formatKey(ph.key) }}</code>
+            <span>{{ displayLabel(ph) }}</span>
+            <code class="finance-wizard__key" :title="ph.key">{{ formatKey(ph.key) }}</code>
           </template>
 
           <template v-if="ph.type === 'text'">
@@ -290,7 +290,7 @@
               :key="ph.key"
               class="finance-wizard__values-row"
             >
-              <strong>{{ ph.label || ph.key }}:</strong>
+              <strong>{{ displayLabel(ph) }}:</strong>
               <span class="finance-wizard__values-text">
                 {{ truncate(stringifyValue(placeholderValues[ph.key]), 120) }}
               </span>
@@ -483,6 +483,33 @@ const truncate = (s: string, limit: number): string =>
 // literal "{{...}}" in template strings.
 const formatKey = (key: string): string => '{' + '{' + key + '}' + '}'
 
+// Display label resolution for a placeholder. Templates uploaded without
+// an admin pass through the metadata editor land in the DB with
+// ``label == key`` — that's the bare snake-case identifier, which we
+// don't want users to see on the fill form. Resolution order:
+//   1. ``ph.label`` if the admin actually customised it (label != key);
+//   2. an i18n alias table for common finance fields (covers the canonical
+//      "立项报告" template + most analogous business templates);
+//   3. a generic humanize fallback (snake_case → "Snake Case") for any
+//      placeholder we haven't aliased.
+// The third branch keeps the form usable for ad-hoc admin templates;
+// rolling out a real "edit placeholder label" UI in the template
+// management page is the proper long-term fix and is out of scope here.
+const humanizeKey = (key: string): string =>
+  key
+    .replace(/_/g, ' ')
+    .replace(/\b\w/g, (c) => c.toUpperCase())
+
+const displayLabel = (ph: { key: string; label?: string }): string => {
+  const label = (ph.label || '').trim()
+  if (label && label !== ph.key) return label
+  const aliasKey = `views.finance.documentsLib.wizard.fieldAliases.${ph.key}`
+  const aliased = t(aliasKey)
+  // vue-i18n returns the key itself when missing; treat that as "no alias".
+  if (aliased && aliased !== aliasKey) return aliased
+  return humanizeKey(ph.key)
+}
+
 const onTemplateScenarioChange = (val: string | number | boolean | undefined) => {
   const filter = (val ?? '') as '' | TemplateScenario
   templateScenarioFilter.value = filter
@@ -571,7 +598,7 @@ const aiFillOne = async (key: string) => {
   loadingByKey[key] = true
   // Look up the placeholder label so we can surface it in the toast.
   const ph = selectedTemplate.value?.placeholders.find((p) => p.key === key)
-  const label = ph?.label || key
+  const label = ph ? displayLabel(ph) : key
   try {
     const result = await generationStore.aiFill(
       workspaceId,

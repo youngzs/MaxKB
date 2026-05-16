@@ -126,7 +126,22 @@ const useFinanceGenerationStore = defineStore('finance-generation', {
         project_id: projectId,
         placeholder_keys: placeholderKeys,
       })
-      return res?.data ?? {}
+      // Backend's contract is a direct ``{<key>: <text>}`` map, but a past
+      // server iteration wrapped it as ``{values: {...}}`` and the front
+      // end silently received ``undefined`` for every key. Accept both
+      // shapes so a rollback to an older backend image still works
+      // end-to-end.
+      const data: any = res?.data ?? {}
+      if (
+        data &&
+        typeof data === 'object' &&
+        data.values &&
+        typeof data.values === 'object' &&
+        !Array.isArray(data.values)
+      ) {
+        return data.values as AIFillResponse
+      }
+      return data as AIFillResponse
     },
     setProjectFilter(projectId: string) {
       this.projectFilter = projectId

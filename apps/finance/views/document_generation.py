@@ -466,4 +466,10 @@ class DocumentGenerationAIFillView(APIView):
         filled = _do_ai_fill(
             template, project, payload['placeholder_keys'], workspace_id=str(workspace_id)
         )
-        return result.success({'values': filled})
+        # Contract: return the filled map directly (``{<key>: <text>}``). An
+        # earlier version wrapped this in ``{'values': filled}`` which
+        # silently broke the front-end — every key was ``undefined`` on
+        # lookup, so the textarea stayed empty and the user saw "no
+        # response" despite a 200. Direct map matches AIFillResponse type
+        # in ui/src/api/finance/type.ts and the existing store contract.
+        return result.success(filled)
