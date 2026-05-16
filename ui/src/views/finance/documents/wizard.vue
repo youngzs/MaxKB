@@ -710,7 +710,16 @@ onMounted(async () => {
 
 <style lang="scss" scoped>
 .finance-wizard {
-  min-height: calc(100vh - 80px);
+  // Parent ``.layout-container__right`` is ``overflow: hidden`` (see
+  // components/layout-container/index.vue) — router slot children must
+  // own their vertical scroll context. Step 3 forms can grow to >12
+  // placeholders (financials template = 13), which previously slid the
+  // bottom action bar (上一步 / 下一步 / 立即生成) off the bottom of
+  // the viewport with no scrollbar. Switching to fixed height +
+  // overflow-y restores access to the action bar regardless of form
+  // length.
+  height: 100%;
+  overflow-y: auto;
   background: var(--el-bg-color);
 
   &__header {
