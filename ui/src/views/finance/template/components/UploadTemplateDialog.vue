@@ -63,8 +63,13 @@
         </el-upload>
       </el-form-item>
 
-      <!-- 占位符语法帮助 + sample 下载。`v-pre` 跳过 Vue 模板插值，
-           这样 `{{ project_name }}` 这种 Jinja 字面量才能原样渲染。 -->
+      <!--
+        占位符语法帮助 + sample 下载。Jinja 字面量（`{{ … }}` / `{% … %}`）
+        通过 SYNTAX_EXAMPLES 字符串变量插值进来 —— 双花括号在字符串内
+        不会被 Vue 模板编译器二次解析。之前版本在外层用 ``v-pre`` 让
+        整块跳过编译，副作用是连 ``v-show`` 也被跳过，面板永远展开。
+      -->
+
       <el-form-item>
         <div class="template-help">
           <div class="template-help__actions">
@@ -83,9 +88,9 @@
           </div>
 
           <transition name="el-collapse-transition">
-            <div v-show="helpExpanded" class="template-help__panel" v-pre>
+            <div v-show="helpExpanded" class="template-help__panel">
               <p><strong>1. 单变量替换</strong> —— 用双花括号包裹变量名，前后留空格：</p>
-              <p class="template-help__code">项目名称：{{ project_name }}</p>
+              <p class="template-help__code">{{ SYNTAX_EXAMPLES.singleVar }}</p>
 
               <p><strong>2. 变量后缀决定字段类型</strong>（上传后可在详情页改）：</p>
               <ul>
@@ -96,13 +101,13 @@
               </ul>
 
               <p><strong>3. 条件块</strong>（同一段落里整段同一字体，否则跨 run 会解析失败）：</p>
-              <p class="template-help__code">{% if has_collateral %}有抵押{% else %}无抵押{% endif %}</p>
+              <p class="template-help__code">{{ SYNTAX_EXAMPLES.cond }}</p>
 
               <p><strong>4. 循环</strong>（推荐传字符串数组，避免 <code>item.name</code> 这种属性访问）：</p>
-              <p class="template-help__code">{% for name in material_names %}• {{ name }}{% endfor %}</p>
+              <p class="template-help__code">{{ SYNTAX_EXAMPLES.loop }}</p>
 
               <p><strong>5. 过滤器</strong>（Jinja 标准）：</p>
-              <p class="template-help__code">金额：{{ amount | round(2) }} 元</p>
+              <p class="template-help__code">{{ SYNTAX_EXAMPLES.filter }}</p>
 
               <p style="color: var(--el-color-warning); margin-top: 8px">
                 ⚠️ 进阶语法（条件/循环/过滤器/属性访问）必须把整段表达式放在 Word 里同一 run 内
@@ -160,6 +165,21 @@ const uploadRef = ref<{ clearFiles: () => void } | null>(null)
 const loading = ref(false)
 const sampleLoading = ref(false)
 const helpExpanded = ref(false)
+
+// Jinja literal examples shown inside the syntax help panel.
+//
+// We feed them in as plain JS strings so Vue's template compiler treats
+// each `{{ ... }}` / `{% ... %}` as plain text inside an interpolation
+// rather than as a nested Vue expression. The previous workaround was
+// to wrap the panel in ``v-pre``, but that also disables ``v-show`` on
+// the same element, leaving the panel permanently expanded — the bug
+// this constant is meant to fix.
+const SYNTAX_EXAMPLES = {
+  singleVar: '项目名称：{{ project_name }}',
+  cond: '{% if has_collateral %}有抵押{% else %}无抵押{% endif %}',
+  loop: '{% for name in material_names %}• {{ name }}{% endfor %}',
+  filter: '金额：{{ amount | round(2) }} 元',
+}
 
 async function onDownloadSample() {
   const workspaceId = user.getWorkspaceId()
