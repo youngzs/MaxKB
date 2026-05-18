@@ -4,6 +4,8 @@ export default {
   confirmModification: 'Confirm modification',
   noHistory: 'No Chat History',
   createChat: 'New Chat',
+  knowledgeContext: 'Grounded in:',
+  knowledgeUnbound: 'No knowledge base is bound to this app (use the workspace "Chat" entry to switch knowledge bases per session)',
   clearChat: 'Clear Chat',
   history: 'Chat History',
   only20history: 'Showing only the last 20 chats',

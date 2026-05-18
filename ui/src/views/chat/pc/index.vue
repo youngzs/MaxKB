@@ -112,9 +112,67 @@
       >
         <div style="flex: 1; width: calc(100% - var(--execution-detail-panel-width))">
           <div class="p-16-24 flex-between">
-            <h4 class="ellipsis-1" style="width: 66%">
-              {{ currentChatName }}
-            </h4>
+            <div style="width: 66%; min-width: 0">
+              <h4 class="ellipsis-1">
+                {{ currentChatName }}
+              </h4>
+              <!--
+                Show the knowledge bases this application is grounded in.
+                Backed by ``application_profile.knowledge_list`` (added in
+                apps/chat/serializers/chat_authentication.py — resolved
+                via the ApplicationKnowledgeMapping bridge). Empty list →
+                no row; otherwise a compact chip-strip so the user knows
+                exactly which knowledge sources are answering them.
+                Read-only by design — admin owns the KB binding via the
+                application config screen; per-session switching would
+                require a separate chat-user-scoped knowledge list API
+                and is intentionally out of scope here.
+              -->
+              <div
+                v-if="hasKnowledgeBinding"
+                class="chat-pc__kb-strip flex align-center"
+              >
+                <template v-if="knowledgeChips.length">
+                  <AppIcon
+                    iconName="app-knowledge"
+                    class="chat-pc__kb-icon mr-4"
+                  />
+                  <span class="lighter mr-8" style="white-space: nowrap">
+                    {{ $t('chat.knowledgeContext') }}
+                  </span>
+                  <div class="chat-pc__kb-chips">
+                    <el-tag
+                      v-for="kb in knowledgeChips"
+                      :key="kb.id"
+                      size="small"
+                      effect="plain"
+                      class="chat-pc__kb-chip"
+                    >
+                      {{ kb.name }}
+                    </el-tag>
+                  </div>
+                </template>
+                <template v-else>
+                  <!--
+                    Application has no fixed KB binding — typically a
+                    chat-entry-style helper whose KB is supplied per
+                    session from the admin "对话" page. Reaching the
+                    widget URL directly leaves the user without a KB
+                    selector and the prologue text becomes misleading
+                    ("请在上方选择知识库..."). The honest fallback is to
+                    tell the user up front what's going on.
+                  -->
+                  <AppIcon
+                    iconName="app-info"
+                    class="chat-pc__kb-icon mr-4"
+                    style="color: var(--el-color-info)"
+                  />
+                  <span class="lighter">
+                    {{ $t('chat.knowledgeUnbound') }}
+                  </span>
+                </template>
+              </div>
+            </div>
 
             <span class="flex align-center" v-if="currentRecordList.length">
               <AppIcon
@@ -330,6 +388,28 @@ const applicationDetail = computed({
     return props.application_profile
   },
   set: (v) => {},
+})
+
+// Lightweight ``[{id, name}]`` view of the knowledge bases this
+// application is bound to. Populated by the chat ProfileSerializer in
+// ``apps/chat/serializers/chat_authentication.py``. Defensive default
+// so a chat session opened against an older backend (pre-this-change)
+// still renders — just without the chip strip.
+const knowledgeChips = computed<Array<{ id: string; name: string }>>(() => {
+  const list = applicationDetail.value?.knowledge_list
+  if (!Array.isArray(list)) return []
+  return list
+    .filter((kb: any) => kb && kb.name)
+    .map((kb: any) => ({ id: String(kb.id), name: String(kb.name) }))
+})
+
+// Distinguish "KB binding info not available from backend at all"
+// (older backend versions) from "explicitly bound to zero KBs" (new
+// backend, chat-entry dedicated app pattern). Only show the empty-state
+// hint when we actually got back a (possibly empty) ``knowledge_list``
+// — otherwise we render nothing, matching pre-patch behaviour.
+const hasKnowledgeBinding = computed<boolean>(() => {
+  return Array.isArray(applicationDetail.value?.knowledge_list)
 })
 
 const chatLogData = ref<any[]>([])
@@ -640,6 +720,40 @@ function closeExecutionDetail() {
 
   .execution-detail-panel {
     width: var(--execution-detail-panel-width, 400px);
+  }
+}
+
+// Knowledge-context strip under the chat title. Compact, info-density
+// over decoration: small icon, label, then chips. Chips collapse onto a
+// second line if there are many KBs rather than getting clipped, so the
+// user always sees the full list.
+.chat-pc__kb-strip {
+  margin-top: 4px;
+  font-size: 12px;
+  color: var(--el-text-color-secondary);
+  flex-wrap: wrap;
+}
+
+.chat-pc__kb-icon {
+  font-size: 14px;
+  color: var(--el-color-primary);
+}
+
+.chat-pc__kb-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 6px;
+}
+
+.chat-pc__kb-chip {
+  max-width: 280px;
+  // Allow chip content to ellipsize cleanly on extremely long KB names.
+  :deep(.el-tag__content) {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    display: inline-block;
+    max-width: 100%;
   }
 }
 </style>

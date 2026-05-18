@@ -14,7 +14,9 @@ from django.utils.translation import gettext_lazy as _
 from rest_framework import serializers
 
 from application.models import ApplicationAccessToken, ChatUserType, Application, ApplicationVersion
+from application.models.application import ApplicationKnowledgeMapping
 from application.serializers.application import ApplicationSerializerModel
+from knowledge.models import Knowledge
 from common.auth.common import ChatUserToken, ChatAuthentication
 from common.constants.authentication_type import AuthenticationType
 from common.constants.cache_version import Cache_Version
@@ -158,6 +160,31 @@ class ApplicationProfileSerializer(serializers.Serializer):
                                             'chat_background': application_setting.chat_background}
         base_node = [node for node in ((application.work_flow or {}).get('nodes', []) or []) if
                      node.get('id') == 'base-node']
+
+        # Resolve linked knowledge bases so the chat widget can display
+        # which knowledge sources the current conversation is grounded in.
+        # ``Application`` doesn't carry ``knowledge_id_list`` directly —
+        # the link lives in the M2M bridge ``ApplicationKnowledgeMapping``.
+        # We surface a lightweight ``[{id, name, type}]`` shape (no
+        # paragraph counts, no per-doc metadata) — the widget needs only
+        # the names for chip rendering. Failure here must NOT block the
+        # profile response; degrade to an empty list.
+        knowledge_list = []
+        try:
+            kb_ids = list(QuerySet(ApplicationKnowledgeMapping)
+                          .filter(application_id=application.id)
+                          .values_list('knowledge_id', flat=True))
+            if kb_ids:
+                knowledge_list = list(QuerySet(Knowledge)
+                                      .filter(id__in=kb_ids)
+                                      .values('id', 'name', 'type'))
+                # Stringify UUIDs so the frontend can use them as v-for keys
+                # without ad-hoc conversion.
+                for kb in knowledge_list:
+                    kb['id'] = str(kb['id'])
+        except Exception:
+            knowledge_list = []
+
         return {**ApplicationSerializerModel(application).data,
                 'stt_model_id': application.stt_model_id,
                 'tts_model_id': application.tts_model_id,
@@ -172,4 +199,5 @@ class ApplicationProfileSerializer(serializers.Serializer):
                 'show_source': application_access_token.show_source,
                 'show_exec': application_access_token.show_exec,
                 'language': application_access_token.language,
+                'knowledge_list': knowledge_list,
                 **application_setting_dict}

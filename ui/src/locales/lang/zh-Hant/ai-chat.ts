@@ -4,6 +4,8 @@ export default {
   confirmModification: '確認修改',
   noHistory: '暫無歷史記錄',
   createChat: '新建對話',
+  knowledgeContext: '目前對話基於：',
+  knowledgeUnbound: '此應用未關聯固定知識庫（如需切換知識庫，請使用工作台的『對話』入口）',
   clearChat: '清空對話',
   history: '歷史記錄',
   only20history: '僅顯示最近 20 條對話',
