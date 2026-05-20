@@ -8,7 +8,13 @@
     </div>
 
     <div class="finance-progress__kpis mb-16">
-      <div v-for="k in kpis" :key="k.key" class="finance-progress__kpi">
+      <div
+        v-for="k in kpis"
+        :key="k.key"
+        class="finance-progress__kpi"
+        :class="{ 'is-clickable': k.key === 'risk' }"
+        @click="k.key === 'risk' && (alertsVisible = true)"
+      >
         <div class="finance-progress__kpi-label">{{ k.label }}</div>
         <div class="finance-progress__kpi-value" :class="'is-' + k.tone">
           {{ k.value }}
@@ -97,6 +103,13 @@
       :owner-options="ownerOptions"
       @changed="refresh"
     />
+
+    <ProgressAlertsDrawer
+      v-model:visible="alertsVisible"
+      :workspace-id="workspaceId"
+      :owner-name-map="ownerNameMap"
+      @select="onAlertSelect"
+    />
   </div>
 </template>
 
@@ -116,6 +129,7 @@ import { getDashboard, getGanttData } from '@/api/finance/progress'
 import UserApi from '@/api/user/user'
 import ProgressGantt from './components/ProgressGantt.vue'
 import ProjectStageDrawer from './components/ProjectStageDrawer.vue'
+import ProgressAlertsDrawer from './components/ProgressAlertsDrawer.vue'
 
 interface OwnerOption {
   label: string
@@ -143,6 +157,7 @@ const ownerNameMap = computed<Record<string, string>>(() => {
 
 const drawerVisible = ref(false)
 const selectedProject = ref<GanttProject | null>(null)
+const alertsVisible = ref(false)
 
 const canEdit = computed(() =>
   hasPermission(
@@ -284,6 +299,15 @@ function onSelect(p: GanttProject) {
   drawerVisible.value = true
 }
 
+function onAlertSelect(projectId: string) {
+  alertsVisible.value = false
+  const target = projects.value.find((x) => x.id === projectId)
+  if (target) {
+    selectedProject.value = target
+    drawerVisible.value = true
+  }
+}
+
 onMounted(() => {
   loadOwners()
   fetchGantt()
@@ -356,6 +380,15 @@ onMounted(() => {
     border: 1px solid var(--el-border-color-lighter);
     border-radius: 6px;
     background: var(--el-bg-color);
+
+    &.is-clickable {
+      cursor: pointer;
+      transition: border-color 0.2s;
+
+      &:hover {
+        border-color: var(--el-color-primary);
+      }
+    }
   }
 
   &__kpi-label {

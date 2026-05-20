@@ -41,7 +41,11 @@ from .materials_task import (
 from .healthz import FinanceHealthzView
 from .ping import FinancePingView
 from .project import FinanceProjectDetailView, FinanceProjectListView
-from .progress import ProgressDashboardView, ProgressGanttView
+from .progress import (
+    ProgressAlertsView,
+    ProgressDashboardView,
+    ProgressGanttView,
+)
 from .project_stage import (
     ProjectStageAdvanceView,
     ProjectStageDetailView,
@@ -78,6 +82,7 @@ __all__ = [
     'StageTemplatesView',
     'ProgressGanttView',
     'ProgressDashboardView',
+    'ProgressAlertsView',
     'DocumentTemplateListView',
     'DocumentTemplateDetailView',
     'DocumentTemplateSampleView',

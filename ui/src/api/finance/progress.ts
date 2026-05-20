@@ -2,6 +2,7 @@ import { type Ref } from 'vue'
 import type { Result } from '@/request/Result'
 import { get, post, put } from '@/request/index'
 import type {
+  AlertsResponse,
   DashboardData,
   GanttParams,
   GanttResponse,
@@ -102,6 +103,16 @@ export const getDashboard: (
   return get(`${wsPrefix(workspaceId)}/progress/dashboard`, undefined, loading)
 }
 
+/**
+ * GET /finance/workspace/<wid>/progress/alerts — 当前风险项列表。
+ */
+export const getAlerts: (
+  workspaceId: string,
+  loading?: Ref<boolean>,
+) => Promise<Result<AlertsResponse>> = (workspaceId, loading) => {
+  return get(`${wsPrefix(workspaceId)}/progress/alerts`, undefined, loading)
+}
+
 export default {
   getGanttData,
   getProjectStages,
@@ -109,4 +120,5 @@ export default {
   rollbackStage,
   updateStage,
   getDashboard,
+  getAlerts,
 }

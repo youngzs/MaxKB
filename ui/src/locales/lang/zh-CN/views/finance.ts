@@ -350,6 +350,10 @@ export default {
       deadline_red: '已超过计划完成时间',
       materials_failed: '关联材料任务存在失败项',
     },
+    alertsTitle: '风险预警',
+    alertsEmpty: '当前没有风险项，一切正常',
+    activeStage: '当前阶段',
+    viewProject: '查看',
   },
   templateLib: {
     title: '模板库',

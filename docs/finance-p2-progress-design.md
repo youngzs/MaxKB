@@ -1,9 +1,9 @@
 # 融资工作台 P2 — 进度归集 设计文档
 
-> 版本：v0.7（**MVP 达成** — Gate 0-4 完成；剩 Gate 5 fast-follow）
-> 状态：**Gate 4 完成 = P2 MVP 闭环** — `progress/dashboard` 聚合端点 + 运行时风险评分（停留时长/临期/材料失败）+ 进度页 KPI 卡条 + Gantt 阶段块风险标全部落地并部署。
+> 版本：v0.8（**P2 交付完成** — Gate 0-5）
+> 状态：**P2「进度归集」交付完成** — Gate 0-5 全部落地并部署。Gate 5 交付 alerts 端点 + App 内风险预警；主动推送（站内通知）经评审暂缓 —— MaxKB 无通知基建，留作未来 fast-follow。
 > 上游：本文档是 [finance-module-design.md](finance-module-design.md) §1.2 第 5 项「进度归集」的落地设计，承接 P0/P1（Gate 1-8 已交付）。
-> 创建：2026-05-18 ｜ Gate 0 评审通过：2026-05-18 ｜ Gate 1-4 交付：2026-05-20
+> 创建：2026-05-18 ｜ Gate 0 评审通过：2026-05-18 ｜ Gate 1-4 交付：2026-05-20 ｜ Gate 5 交付：2026-05-21
 
 ---
 
@@ -270,7 +270,7 @@ P0/P1 已交付融资项目库、材料整理、流程文档、审核发送闭�
 | **Gate 2** | 阶段流转 API | advance / rollback / 改阶段端点 + 创项目时预生成阶段行 + 计划时间手填表单 ✅ |
 | **Gate 3** | Gantt 页面 | `/finance/progress` 时间线视图 + 筛选 + 单项目抽屉 ✅ |
 | **Gate 4** | 驾驶舱 + 风险 | dashboard 聚合端点 + 风险评分 + KPI 卡 + 风险标渲染 ✅（= MVP 达成） |
-| **Gate 5** | 到期提醒 | alerts 端点 + 站内通知（邮件/企微视情况）← 当前（fast-follow） |
+| **Gate 5** | 到期提醒 | alerts 端点 + App 内风险预警 ✅；主动推送（站内通知）暂缓 —— 无通知基建，留作 fast-follow |
 
 > **MVP 口径（2026-05-18 Gate 0 确认）= Gate 4** —— Gantt + 驾驶舱 + 风险自动标记，
 > 才是完整的"进度归集"价值闭环（高管一屏看全 + 异常自动浮现）。
@@ -314,3 +314,4 @@ P0/P1 已交付融资项目库、材料整理、流程文档、审核发送闭�
 | v0.5 | 2026-05-20 | Gate 2 完成：补 `GET stage-templates` 端点；前端创建/编辑项目弹窗加「主要对手方」「项目负责人」字段 + 「阶段计划完成时间」手填分组（仅创建态、按类型模板列阶段），编辑态 status 下拉禁用；i18n 三语补键。全部部署测试环境 | Finance Workspace 小组 |
 | v0.6 | 2026-05-20 | Gate 3 完成：`progress/gantt` 聚合端点；`/finance/progress` 页面替换 PlanningDoc 占位 —— 自绘 div 时间轴（Gantt 选型 POC 结论：不引入新依赖）、类型/状态/负责人筛选、单项目右抽屉（推进/回退/逐阶段改 planned_at/owner/note）；路由解除 disabled；i18n 三语加 progressPage 段。全部部署测试环境 | Finance Workspace 小组 |
 | v0.7 | 2026-05-20 | **Gate 4 完成 = MVP 达成**：`progress/dashboard` 聚合端点（在途总额/平均周期/通过率/机构占比/风险计数）；运行时风险评分 `service/risk.py`（信号 1 停留时长 + 2 临期 + 3 材料 failed；信号 4 关键文件缺失暂缓——缺阶段→文档映射）；阈值常量 `constants/risk_rules.py`；进度页顶部 KPI 卡条 + Gantt 阶段块风险标（黄/红）+ 风险原因 tooltip；单测 `test_risk.py`。全部部署测试环境 | Finance Workspace 小组 |
+| v0.8 | 2026-05-21 | **Gate 5 完成 — P2 交付完成**：`progress/alerts` 端点（运行时风险项列表，复用 `service/risk.py`）；前端风险预警抽屉 `ProgressAlertsDrawer`（进度页风险 KPI 卡可点开，列出风险项 + 原因 + 责任人，可跳转单项目）。主动推送（站内通知）经评审暂缓 —— MaxKB 无站内通知基建，自建属平台级 infra；留作未来 fast-follow。全部部署测试环境 | Finance Workspace 小组 |

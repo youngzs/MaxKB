@@ -371,6 +371,10 @@ export default {
       deadline_red: 'Past the planned completion date',
       materials_failed: 'A linked materials task has failed',
     },
+    alertsTitle: 'Risk Alerts',
+    alertsEmpty: 'No risk items right now — all clear',
+    activeStage: 'Current Stage',
+    viewProject: 'View',
   },
   templateLib: {
     title: 'Templates',

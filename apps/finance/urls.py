@@ -61,6 +61,11 @@ urlpatterns = [
         views.ProgressDashboardView.as_view(),
         name='progress_dashboard',
     ),
+    path(
+        'workspace/<str:workspace_id>/progress/alerts',
+        views.ProgressAlertsView.as_view(),
+        name='progress_alerts',
+    ),
     # ---- Gate 3 Track A: document templates ----
     path(
         'workspace/<str:workspace_id>/template',

@@ -6,8 +6,7 @@
 
     GET /workspace/<wid>/progress/gantt      Gantt 数据：项目 + 阶段记录 + 风险。
     GET /workspace/<wid>/progress/dashboard  驾驶舱聚合 KPI。
-
-    （Gate 5 将在此文件追加 progress/alerts。）
+    GET /workspace/<wid>/progress/alerts     当前风险项列表（运行时算）。
 """
 from collections import Counter
 from decimal import Decimal
@@ -22,7 +21,12 @@ from common.auth import TokenAuth
 from common.auth.authentication import has_permissions
 from common.constants.permission_constants import PermissionConstants, RoleConstants
 from finance.constants.stage_templates import get_stage
-from finance.models import FinanceProject, MaterialsTask, ProjectStageRecord
+from finance.models import (
+    FinanceProject,
+    MaterialsTask,
+    ProjectStageRecord,
+    ProjectStageStatus,
+)
 from finance.models.project import FinanceProjectStatus
 from finance.serializers.project import FinanceProjectOutputSerializer
 from finance.serializers.project_stage_record import ProjectStageRecordOutputSerializer
@@ -191,3 +195,62 @@ class ProgressDashboardView(APIView):
                 },
             }
         )
+
+
+class ProgressAlertsView(APIView):
+    """GET /workspace/<wid>/progress/alerts — 当前风险项列表（运行时算）。"""
+
+    authentication_classes = [TokenAuth]
+
+    @extend_schema(
+        methods=['GET'],
+        summary=_('Progress alerts'),
+        description=_('Projects currently at risk, with the risky stage and reasons.'),
+        operation_id=_('Progress alerts'),  # type: ignore
+        tags=[_('Finance')],  # type: ignore
+    )
+    @has_permissions(
+        PermissionConstants.FINANCE_READ.get_workspace_permission(),
+        RoleConstants.USER.get_workspace_role(),
+        RoleConstants.WORKSPACE_MANAGE.get_workspace_role(),
+    )
+    def get(self, request: Request, workspace_id):
+        projects, stages_by_project, failed_materials = _gather_projects(workspace_id)
+
+        alerts = []
+        for project in projects:
+            rows = stages_by_project.get(project.id, [])
+            risk = compute_project_risk(
+                rows, has_failed_materials=project.id in failed_materials
+            )
+            if risk['level'] == 'none':
+                continue
+            active = next(
+                (s for s in rows if s.status == ProjectStageStatus.ACTIVE), None
+            )
+            active_label = ''
+            if active is not None:
+                stage = get_stage(project.project_type, active.stage_key)
+                active_label = stage.label if stage else active.stage_key
+            alerts.append(
+                {
+                    'project_id': str(project.id),
+                    'project_name': project.name,
+                    'project_type': project.project_type,
+                    'owner_id': str(project.owner_id) if project.owner_id else None,
+                    'counterparty': project.counterparty,
+                    'risk': risk['level'],
+                    'risk_reasons': risk['reasons'],
+                    'active_stage_key': active.stage_key if active is not None else '',
+                    'active_stage_label': active_label,
+                    'active_planned_at': (
+                        active.planned_at.isoformat()
+                        if active is not None and active.planned_at
+                        else None
+                    ),
+                }
+            )
+
+        rank = {'red': 0, 'yellow': 1}
+        alerts.sort(key=lambda a: rank.get(a['risk'], 9))
+        return result.success({'alerts': alerts})

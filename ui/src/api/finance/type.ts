@@ -125,6 +125,24 @@ export interface DashboardData {
   risk: { yellow: number; red: number }
 }
 
+/** progress/alerts 里的单个风险项。 */
+export interface AlertItem {
+  project_id: string
+  project_name: string
+  project_type: ProjectType
+  owner_id: string | null
+  counterparty: string
+  risk: RiskLevel
+  risk_reasons: string[]
+  active_stage_key: string
+  active_stage_label: string
+  active_planned_at: string | null
+}
+
+export interface AlertsResponse {
+  alerts: AlertItem[]
+}
+
 export interface GanttParams {
   project_type?: ProjectType | ''
   status?: ProjectStatus | ''

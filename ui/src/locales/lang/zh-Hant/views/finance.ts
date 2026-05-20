@@ -350,6 +350,10 @@ export default {
       deadline_red: '已超過計劃完成時間',
       materials_failed: '關聯材料任務存在失敗項',
     },
+    alertsTitle: '風險預警',
+    alertsEmpty: '當前沒有風險項，一切正常',
+    activeStage: '當前階段',
+    viewProject: '查看',
   },
   templateLib: {
     title: '範本庫',
