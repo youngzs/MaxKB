@@ -31,7 +31,13 @@ from .materials_task import (
     MaterialsTaskReviewSerializer,
     MaterialsTaskUpdateSelectionSerializer,
 )
-from .project import FinanceProjectInputSerializer, FinanceProjectOutputSerializer
+from .project import (
+    FinanceProjectInputSerializer,
+    FinanceProjectOutputSerializer,
+    StagePlanInputSerializer,
+)
+from .project_stage import ProjectStageUpdateSerializer, StageTransitionSerializer
+from .project_stage_record import ProjectStageRecordOutputSerializer
 from .smtp_config import (
     SmtpConfigCreateSerializer,
     SmtpConfigOutputSerializer,
@@ -42,6 +48,10 @@ from .smtp_config import (
 __all__ = [
     'FinanceProjectInputSerializer',
     'FinanceProjectOutputSerializer',
+    'StagePlanInputSerializer',
+    'ProjectStageRecordOutputSerializer',
+    'StageTransitionSerializer',
+    'ProjectStageUpdateSerializer',
     'FinanceAuditLogOutputSerializer',
     'DocumentTemplateUploadSerializer',
     'DocumentTemplateUpdateSerializer',

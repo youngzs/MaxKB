@@ -4,6 +4,7 @@ import {
   getTemplate,
   uploadTemplate,
   updateTemplate,
+  suggestTemplatePlaceholders,
   deleteTemplate,
 } from '@/api/finance/template'
 import type {
@@ -81,6 +82,10 @@ const useFinanceTemplateStore = defineStore('finance-template', {
         }
       }
       return updated
+    },
+    async suggestPlaceholders(workspaceId: string, id: string) {
+      const res = await suggestTemplatePlaceholders(workspaceId, id)
+      return res?.data?.placeholders ?? []
     },
     async remove(workspaceId: string, id: string) {
       await deleteTemplate(workspaceId, id)

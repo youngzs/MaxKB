@@ -11,6 +11,7 @@
     USER and WORKSPACE_MANAGE roles fall through as alternative authorizations,
     matching the convention in apps/application/views/application.py.
 """
+from django.db import transaction
 from django.db.models import Q
 from django.utils.translation import gettext_lazy as _
 from drf_spectacular.utils import extend_schema
@@ -22,12 +23,19 @@ from common.auth import TokenAuth
 from common.auth.authentication import has_permissions
 from common.constants.permission_constants import PermissionConstants, RoleConstants
 from common.exception.app_exception import AppApiException, NotFound404
-from finance.models import FinanceAuditAction, FinanceAuditTargetType, FinanceProject
+from finance.constants.stage_templates import get_template, resolve_current_stage_key
+from finance.models import (
+    FinanceAuditAction,
+    FinanceAuditTargetType,
+    FinanceProject,
+    FinanceProjectStatus,
+)
 from finance.serializers.project import (
     FinanceProjectInputSerializer,
     FinanceProjectOutputSerializer,
 )
 from finance.service.audit import audit_log
+from finance.service.stage_progression import pregenerate_stage_records
 
 _DEFAULT_PAGE = 1
 _DEFAULT_SIZE = 20
@@ -64,6 +72,24 @@ def _paginate(queryset, query_params):
     offset = (page - 1) * size
     records = list(queryset[offset: offset + size])
     return total, page, size, records
+
+
+def _validated_stage_plans(project_type, stage_plans):
+    """
+    把创建表单的 `stage_plans`（[{stage_key, planned_at}]）校验并整理成
+    `{stage_key: planned_at}`。stage_key 必须属于该项目类型的阶段模板。
+    """
+    valid_keys = {stage.key for stage in get_template(project_type)}
+    plan_map = {}
+    for plan in stage_plans or []:
+        key = plan['stage_key']
+        if key not in valid_keys:
+            raise AppApiException(
+                400,
+                _('Unknown stage_key for this project type: %(key)s') % {'key': key},
+            )
+        plan_map[key] = plan.get('planned_at')
+    return plan_map
 
 
 class FinanceProjectListView(APIView):
@@ -116,20 +142,31 @@ class FinanceProjectListView(APIView):
         # knowledge_base_ids may arrive as a list of UUID objects — coerce
         # to strings so JSONField stores a stable, JSON-native shape.
         kb_ids = [str(kid) for kid in payload.get('knowledge_base_ids') or []]
-        project = FinanceProject.objects.create(
-            workspace_id=workspace_id,
-            name=payload['name'],
-            code=code,
-            project_type=payload['project_type'],
-            target_amount=payload.get('target_amount'),
-            currency=payload.get('currency') or 'CNY',
-            status=payload.get('status') or 'preparing',
-            region=payload.get('region') or '',
-            industry_code=payload.get('industry_code') or '',
-            knowledge_base_ids=kb_ids,
-            description=payload.get('description') or '',
-            created_by=request.user.id,
-        )
+        project_type = payload['project_type']
+        # `status` 仅作起始大状态种子 —— 据此反查起始子阶段并预生成阶段行。
+        status = payload.get('status') or FinanceProjectStatus.PREPARING
+        stage_plans = _validated_stage_plans(project_type, payload.get('stage_plans'))
+        # 创建项目 + 预生成阶段行（P2 Gate 2）须原子化 —— 不能出现「项目已存在
+        # 但没有阶段记录」的半截状态。
+        with transaction.atomic():
+            project = FinanceProject.objects.create(
+                workspace_id=workspace_id,
+                name=payload['name'],
+                code=code,
+                project_type=project_type,
+                target_amount=payload.get('target_amount'),
+                currency=payload.get('currency') or 'CNY',
+                status=status,
+                region=payload.get('region') or '',
+                industry_code=payload.get('industry_code') or '',
+                knowledge_base_ids=kb_ids,
+                description=payload.get('description') or '',
+                owner_id=payload.get('owner_id') or request.user.id,
+                counterparty=payload.get('counterparty') or '',
+                current_stage_key=resolve_current_stage_key(project_type, status),
+                created_by=request.user.id,
+            )
+            pregenerate_stage_records(project, stage_plans=stage_plans)
         return result.success(FinanceProjectOutputSerializer(project).data)
 
 
@@ -187,18 +224,29 @@ class FinanceProjectDetailView(APIView):
             workspace_id=workspace_id, code=new_code, is_deleted=False
         ).exclude(id=instance.id).exists():
             raise AppApiException(400, _('Project code already exists in this workspace'))
+        # 项目类型决定阶段模板 —— 创建后不可改，否则已有阶段记录全部失真。
+        if payload['project_type'] != instance.project_type:
+            raise AppApiException(400, _('Project type cannot be changed after creation'))
         instance.name = payload['name']
         instance.code = new_code
-        instance.project_type = payload['project_type']
         instance.target_amount = payload.get('target_amount')
         instance.currency = payload.get('currency') or instance.currency
-        instance.status = payload.get('status') or instance.status
         instance.region = payload.get('region') or ''
         instance.industry_code = payload.get('industry_code') or ''
         instance.knowledge_base_ids = [
             str(kid) for kid in (payload.get('knowledge_base_ids') or [])
         ]
         instance.description = payload.get('description') or ''
+        instance.counterparty = payload.get('counterparty') or ''
+        if payload.get('owner_id'):
+            instance.owner_id = payload['owner_id']
+        # P2 §4.6：大状态由 current_stage_key 派生、不由 PUT 改 —— 唯一例外是
+        # 把项目置为 terminated（横切终止态，任何阶段都可被标记终止）。
+        if (
+            payload.get('status') == FinanceProjectStatus.TERMINATED
+            and instance.status != FinanceProjectStatus.TERMINATED
+        ):
+            instance.status = FinanceProjectStatus.TERMINATED
         instance.save()
         return result.success(FinanceProjectOutputSerializer(instance).data)
 

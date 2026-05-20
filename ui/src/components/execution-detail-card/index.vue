@@ -1035,7 +1035,8 @@
               <template v-if="data.type === WorkflowType.LoopNode">
                 <el-radio-group v-model="currentLoopNode" class="app-radio-button-group mb-8">
                   <template v-for="(loop, loopIndex) in data.loop_node_data" :key="loopIndex">
-                    <el-radio-button :label="loopIndex" :value="loopIndex"/>
+                    <!-- 删除冗余 :label —— EP 3.0 用 :value 一个就够，label 是显示文本 -->
+                    <el-radio-button :value="loopIndex"/>
                   </template>
                 </el-radio-group>
                 <template

@@ -6,34 +6,12 @@
         <p class="finance-audit__subtitle">{{ $t('views.finance.auditPage.subtitle') }}</p>
       </div>
       <div class="flex" style="gap: 8px; align-items: center">
-        <!-- Gate 8 Track B: Celery worker health card -->
-        <div class="finance-audit__worker-health" v-if="!workerHealthLoading || celeryHealth">
-          <span class="finance-audit__worker-health-label">
-            {{ $t('views.finance.workerHealth.title') }}
-          </span>
-          <el-tag
-            :type="celeryHealth?.worker_online ? 'success' : 'danger'"
-            size="small"
-            disable-transitions
-            effect="plain"
-          >
-            {{
-              celeryHealth?.worker_online
-                ? $t('views.finance.workerHealth.online')
-                : $t('views.finance.workerHealth.offline')
-            }}
-          </el-tag>
-          <span
-            class="finance-audit__worker-health-tasks"
-            v-if="celeryHealth"
-          >
-            {{
-              $t('views.finance.workerHealth.tasksRegistered', {
-                n: celeryHealth.registered_finance_tasks.length,
-              })
-            }}
-          </span>
-        </div>
+        <!-- Celery worker health card 已移除 ——
+             system-info 后端要求"用户在 *这个* workspace 是 ADMIN"，
+             而前端 `RoleConst.ADMIN` 只校验系统级，两者无法精准对齐：
+             system-level ADMIN 但非 workspace-level ADMIN 的账号在这里会必中 403。
+             Celery 健康监控属诊断面板，应有独立的 /finance/diagnostics 入口。
+             见 git history 取回的话查 c23b3e028 之前。 -->
         <el-button
           type="primary"
           plain
@@ -46,74 +24,97 @@
       </div>
     </div>
 
+    <!--
+      响应式 grid：xl >= 6 列(对象类型/操作/操作人ID/时间范围占2列/关键词)，
+      lg = 2 行 3 列，md = 2 列，sm = 1 列。inputs / selects 用 100% 宽度
+      自然填满 col，不再被 inline form 横向挤压成针孔。
+    -->
     <div class="finance-audit__filters mb-16">
-      <el-form inline :model="filterModel" @submit.prevent>
-        <el-form-item :label="$t('views.finance.auditPage.filters.targetType')">
-          <el-select
-            v-model="filterModel.targetType"
-            :placeholder="$t('views.finance.auditPage.filters.allTargets')"
-            clearable
-            style="width: 180px"
-            @change="onFilterChange('targetType', $event)"
-          >
-            <el-option
-              v-for="opt in targetTypeOptions"
-              :key="opt.value"
-              :label="opt.label"
-              :value="opt.value"
-            />
-          </el-select>
-        </el-form-item>
+      <el-form
+        :model="filterModel"
+        label-position="top"
+        @submit.prevent
+      >
+        <el-row :gutter="16">
+          <el-col :xs="24" :sm="12" :md="8" :lg="6" :xl="4">
+            <el-form-item :label="$t('views.finance.auditPage.filters.targetType')">
+              <el-select
+                v-model="filterModel.targetType"
+                :placeholder="$t('views.finance.auditPage.filters.allTargets')"
+                clearable
+                style="width: 100%"
+                @change="onFilterChange('targetType', $event)"
+              >
+                <el-option
+                  v-for="opt in targetTypeOptions"
+                  :key="opt.value"
+                  :label="opt.label"
+                  :value="opt.value"
+                />
+              </el-select>
+            </el-form-item>
+          </el-col>
 
-        <el-form-item :label="$t('views.finance.auditPage.filters.action')">
-          <el-select
-            v-model="filterModel.action"
-            :placeholder="$t('views.finance.auditPage.filters.allActions')"
-            clearable
-            style="width: 180px"
-            @change="onFilterChange('action', $event)"
-          >
-            <el-option
-              v-for="opt in actionOptions"
-              :key="opt.value"
-              :label="opt.label"
-              :value="opt.value"
-            />
-          </el-select>
-        </el-form-item>
+          <el-col :xs="24" :sm="12" :md="8" :lg="6" :xl="4">
+            <el-form-item :label="$t('views.finance.auditPage.filters.action')">
+              <el-select
+                v-model="filterModel.action"
+                :placeholder="$t('views.finance.auditPage.filters.allActions')"
+                clearable
+                style="width: 100%"
+                @change="onFilterChange('action', $event)"
+              >
+                <el-option
+                  v-for="opt in actionOptions"
+                  :key="opt.value"
+                  :label="opt.label"
+                  :value="opt.value"
+                />
+              </el-select>
+            </el-form-item>
+          </el-col>
 
-        <el-form-item :label="$t('views.finance.auditPage.filters.actorId')">
-          <el-input
-            v-model="filterModel.actorId"
-            :placeholder="$t('views.finance.auditPage.filters.actorIdPlaceholder')"
-            clearable
-            style="width: 240px"
-            @change="onFilterChange('actorId', filterModel.actorId)"
-            @clear="onFilterChange('actorId', '')"
-          />
-        </el-form-item>
+          <el-col :xs="24" :sm="12" :md="8" :lg="6" :xl="4">
+            <el-form-item :label="$t('views.finance.auditPage.filters.actorId')">
+              <el-input
+                v-model="filterModel.actorId"
+                :placeholder="$t('views.finance.auditPage.filters.actorIdPlaceholder')"
+                clearable
+                style="width: 100%"
+                @change="onFilterChange('actorId', filterModel.actorId)"
+                @clear="onFilterChange('actorId', '')"
+              />
+            </el-form-item>
+          </el-col>
 
-        <el-form-item :label="$t('views.finance.auditPage.filters.dateRange')">
-          <el-date-picker
-            v-model="dateRange"
-            type="datetimerange"
-            value-format="YYYY-MM-DDTHH:mm:ss"
-            :start-placeholder="$t('views.finance.auditPage.filters.dateFrom')"
-            :end-placeholder="$t('views.finance.auditPage.filters.dateTo')"
-            @change="onDateRangeChange"
-          />
-        </el-form-item>
+          <!-- datetimerange 比较宽，给它 2 倍 col 宽 -->
+          <el-col :xs="24" :sm="24" :md="16" :lg="12" :xl="8">
+            <el-form-item :label="$t('views.finance.auditPage.filters.dateRange')">
+              <el-date-picker
+                v-model="dateRange"
+                type="datetimerange"
+                value-format="YYYY-MM-DDTHH:mm:ss"
+                :start-placeholder="$t('views.finance.auditPage.filters.dateFrom')"
+                :end-placeholder="$t('views.finance.auditPage.filters.dateTo')"
+                style="width: 100%"
+                @change="onDateRangeChange"
+              />
+            </el-form-item>
+          </el-col>
 
-        <el-form-item :label="$t('views.finance.auditPage.filters.keyword')">
-          <el-input
-            v-model="filterModel.keyword"
-            :placeholder="$t('views.finance.auditPage.filters.keywordPlaceholder')"
-            clearable
-            style="width: 240px"
-            @change="onFilterChange('keyword', filterModel.keyword)"
-            @clear="onFilterChange('keyword', '')"
-          />
-        </el-form-item>
+          <el-col :xs="24" :sm="24" :md="16" :lg="12" :xl="4">
+            <el-form-item :label="$t('views.finance.auditPage.filters.keyword')">
+              <el-input
+                v-model="filterModel.keyword"
+                :placeholder="$t('views.finance.auditPage.filters.keywordPlaceholder')"
+                clearable
+                style="width: 100%"
+                @change="onFilterChange('keyword', filterModel.keyword)"
+                @clear="onFilterChange('keyword', '')"
+              />
+            </el-form-item>
+          </el-col>
+        </el-row>
       </el-form>
     </div>
 
@@ -312,7 +313,6 @@ import useStore from '@/stores'
 import { hasPermission } from '@/utils/permission'
 import { RoleConst } from '@/utils/permission/data'
 import { exportAuditLog } from '@/api/finance/audit-log'
-import { getSystemInfo, type CeleryHealth } from '@/api/finance/system-info'
 import type {
   AuditAction,
   AuditLogEntry,
@@ -324,9 +324,8 @@ import JsonPayload from '../components/JsonPayload.vue'
 const router = useRouter()
 const { user, financeAudit: store } = useStore()
 
-// Admin-only gate. The backend additionally enforces FINANCE_REVIEW /
-// WORKSPACE_MANAGE; this is a defence-in-depth so the page short-circuits
-// before firing API calls when a non-admin lands on the URL directly.
+// Gate 用户能否打开审计页 —— ADMIN 或工作空间管理员都可以读审计日志。
+// 这是 defence-in-depth：后端额外按 FINANCE_REVIEW / WORKSPACE_MANAGE 鉴权。
 const isAdmin = hasPermission(
   [RoleConst.ADMIN, RoleConst.WORKSPACE_MANAGE.getWorkspaceRole],
   'OR',
@@ -522,28 +521,6 @@ const openPayloadDialog = (row: AuditLogEntry) => {
   payloadDialogVisible.value = true
 }
 
-// ----- Gate 8 Track B: Celery worker health card -----
-// Surfaces the system-info `celery` section. Best-effort — a failed fetch
-// just leaves celeryHealth null and the card shows "offline".
-const celeryHealth = ref<CeleryHealth | null>(null)
-const workerHealthLoading = ref(false)
-
-const fetchWorkerHealth = async () => {
-  if (!isAdmin) return
-  const workspaceId = user.getWorkspaceId()
-  if (!workspaceId) return
-  workerHealthLoading.value = true
-  try {
-    const res = await getSystemInfo(workspaceId)
-    celeryHealth.value = res?.data?.celery ?? null
-  } catch {
-    // swallow — the card is diagnostic, not load-bearing.
-    celeryHealth.value = null
-  } finally {
-    workerHealthLoading.value = false
-  }
-}
-
 onMounted(() => {
   if (!isAdmin) {
     // Soft-redirect non-admins back to the overview rather than 403.
@@ -551,7 +528,6 @@ onMounted(() => {
     return
   }
   fetchList()
-  fetchWorkerHealth()
 })
 </script>
 
@@ -570,32 +546,19 @@ onMounted(() => {
     font-size: 13px;
   }
 
-  &__worker-health {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    padding: 4px 10px;
-    margin-right: 4px;
-    border-radius: 6px;
-    background: var(--el-fill-color-light);
-    font-size: 12px;
-  }
-
-  &__worker-health-label {
-    color: var(--el-text-color-secondary);
-  }
-
-  &__worker-health-tasks {
-    color: var(--el-text-color-secondary);
-  }
-
   &__filters {
     background: var(--el-fill-color-light);
-    padding: 12px 16px 0;
+    padding: 12px 16px 4px;
     border-radius: 6px;
 
     :deep(.el-form-item) {
-      margin-bottom: 12px;
+      margin-bottom: 8px;
+    }
+    // label-position: top 时 label 的小尺寸 + 紧凑间距，避免每个 col 太高
+    :deep(.el-form-item__label) {
+      padding-bottom: 4px;
+      font-size: 13px;
+      color: var(--el-text-color-regular);
     }
   }
 

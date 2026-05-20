@@ -147,7 +147,6 @@ const financeRouter = {
         parentName: 'finance',
         sameRoute: 'finance-progress',
         order: 6,
-        disabled: true,
       },
       component: () => import('@/views/finance/progress/index.vue'),
     },

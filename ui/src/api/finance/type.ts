@@ -21,9 +21,19 @@ export interface Project {
   industry_code: string
   knowledge_base_ids: string[]
   description: string
+  /** P2 进度归集：项目负责人 / 主要对手方 / 当前子阶段 key。 */
+  owner_id: string | null
+  counterparty: string
+  current_stage_key: string
   created_by: string
   created_at: string
   updated_at: string
+}
+
+/** 创建项目时单个子阶段的计划完成时间（DR-P2-04，仅创建生效）。 */
+export interface StagePlanInput {
+  stage_key: string
+  planned_at: string | null
 }
 
 export interface ProjectInput {
@@ -37,6 +47,95 @@ export interface ProjectInput {
   industry_code?: string
   knowledge_base_ids?: string[]
   description?: string
+  owner_id?: string | null
+  counterparty?: string
+  /** 仅创建项目时携带 —— 一组按类型模板列出的阶段计划完成时间。 */
+  stage_plans?: StagePlanInput[]
+}
+
+/** 单个子阶段模板项（GET stage-templates 返回）。 */
+export interface StageTemplateItem {
+  stage_key: string
+  label: string
+  maps_to_status: ProjectStatus
+  order: number
+}
+
+/** project_type -> 有序子阶段模板。 */
+export type StageTemplatesMap = Record<ProjectType, StageTemplateItem[]>
+
+/* ──────────────────────────────────────────────────────────────────────────
+ *  Progress / Stage records (P2 Gate 2/3)
+ * ─────────────────────────────────────────────────────────────────────── */
+
+export type StageStatus = 'pending' | 'active' | 'done' | 'skipped'
+
+/** 单条阶段记录（GET project/<pk>/stages 与 progress/gantt 返回）。 */
+export interface StageRecord {
+  id: string
+  workspace_id: string
+  project_id: string
+  stage_key: string
+  stage_order: number
+  planned_at: string | null
+  actual_at: string | null
+  owner_id: string | null
+  entered_at: string | null
+  status: StageStatus
+  note: string
+  created_at: string
+  updated_at: string
+  /** 模板派生的阶段中文名 —— gantt / stages 端点附带。 */
+  stage_label?: string
+}
+
+/** 运行时风险等级（progress/gantt 实时计算，不落库）。 */
+export type RiskLevel = 'none' | 'yellow' | 'red'
+
+/** progress/gantt 里的单个项目：项目字段 + 阶段记录 + 风险。 */
+export interface GanttProject extends Project {
+  stages: StageRecord[]
+  risk: RiskLevel
+  /** 风险原因代码（dwell_red / deadline_yellow / materials_failed …），前端 i18n 成文案。 */
+  risk_reasons: string[]
+}
+
+export interface GanttResponse {
+  projects: GanttProject[]
+}
+
+export interface CounterpartyShare {
+  counterparty: string
+  count: number
+}
+
+/** progress/dashboard 驾驶舱聚合 KPI。 */
+export interface DashboardData {
+  total_count: number
+  in_flight_count: number
+  /** Decimal 序列化为字符串。 */
+  in_flight_amount: string
+  landed_count: number
+  terminated_count: number
+  /** 通过率百分比；无已决项目时为 null。 */
+  pass_rate: number | null
+  /** 平均周期（天）；无落地项目时为 null。 */
+  avg_cycle_days: number | null
+  counterparty_share: CounterpartyShare[]
+  risk: { yellow: number; red: number }
+}
+
+export interface GanttParams {
+  project_type?: ProjectType | ''
+  status?: ProjectStatus | ''
+  owner_id?: string
+}
+
+/** PUT project/<pk>/stages/<stage_key> 请求体（partial）。 */
+export interface StageUpdateInput {
+  planned_at?: string | null
+  owner_id?: string | null
+  note?: string
 }
 
 export interface ListParams {
@@ -98,6 +197,10 @@ export interface TemplateUpdate {
   scenario?: TemplateScenario
   is_active?: boolean
   placeholders?: Placeholder[]
+}
+
+export interface TemplatePlaceholderSuggestResult {
+  placeholders: Placeholder[]
 }
 
 export interface TemplateListParams {

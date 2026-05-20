@@ -1,6 +1,10 @@
 <template>
+  <!--
+    Element Plus 3.0：`label` 作为 value 已废弃，改用显式 `value`。slot 仍是
+    显示文本（含 v-html 渲染的 label 函数返回值）。
+  -->
   <el-radio-group v-bind="$attrs">
-    <el-radio-button v-for="(item, index) in option_list" :key="index" :label="item[valueField]">
+    <el-radio-button v-for="(item, index) in option_list" :key="index" :value="item[valueField]">
       <div v-html="label(item)"></div>
     </el-radio-button>
   </el-radio-group>

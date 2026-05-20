@@ -11,14 +11,15 @@
     <FinanceAiBanner />
 
     <div class="finance-template__filters mb-16">
+      <!-- Element Plus 3.0：`label` 作为 value 已废弃，改用显式 `value`。 -->
       <el-radio-group v-model="scenarioFilter" @change="onScenarioChange">
-        <el-radio-button label="">
+        <el-radio-button value="">
           {{ $t('views.finance.templateLib.scenario.all') }}
         </el-radio-button>
         <el-radio-button
           v-for="opt in scenarioOptions"
           :key="opt.value"
-          :label="opt.value"
+          :value="opt.value"
         >
           {{ opt.label }}
         </el-radio-button>

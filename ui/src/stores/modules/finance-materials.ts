@@ -3,6 +3,7 @@ import {
   listTasks,
   getTask,
   createTask,
+  updateTask,
   deleteTask,
   parseRequirements,
   matchDocuments,
@@ -116,6 +117,35 @@ const useFinanceMaterialsStore = defineStore('finance-materials', {
         this.total += 1
       }
       return created
+    },
+    /**
+     * Partial update of an editable task (DRAFT / FAILED / PARSING / MATCHING).
+     * Returns the refreshed task; also syncs `selected` and the list cache.
+     */
+    async update(
+      workspaceId: string,
+      id: string,
+      body: {
+        title?: string
+        requirement_text?: string
+        parsed_items?: Array<{
+          key: string
+          label: string
+          description?: string
+          required?: boolean
+        }>
+      },
+    ) {
+      const res = await updateTask(workspaceId, id, body)
+      const updated = res?.data
+      if (updated) {
+        if (this.selected && this.selected.id === id) {
+          this.selected = updated
+        }
+        const idx = this.list.findIndex((it) => it.id === id)
+        if (idx >= 0) this.list.splice(idx, 1, updated)
+      }
+      return updated
     },
     async remove(workspaceId: string, id: string) {
       await deleteTask(workspaceId, id)

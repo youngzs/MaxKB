@@ -80,39 +80,68 @@
               @click="onDownloadSample"
             >
               <AppIcon iconName="app-download" class="mr-4" />
-              下载示例模板（.docx）
+              {{ $t('views.finance.templateLib.uploadDialog.downloadSample') }}
             </el-button>
             <el-button link @click="helpExpanded = !helpExpanded">
-              {{ helpExpanded ? '收起' : '展开' }}占位符语法
+              {{
+                helpExpanded
+                  ? $t('views.finance.templateLib.uploadDialog.helpCollapse')
+                  : $t('views.finance.templateLib.uploadDialog.helpExpand')
+              }}
             </el-button>
           </div>
 
           <transition name="el-collapse-transition">
             <div v-show="helpExpanded" class="template-help__panel">
-              <p><strong>1. 单变量替换</strong> —— 用双花括号包裹变量名，前后留空格：</p>
+              <p>
+                <strong>{{ $t('views.finance.templateLib.uploadDialog.help.section1Title') }}</strong
+                >{{ $t('views.finance.templateLib.uploadDialog.help.section1Desc') }}
+              </p>
               <p class="template-help__code">{{ SYNTAX_EXAMPLES.singleVar }}</p>
 
-              <p><strong>2. 变量后缀决定字段类型</strong>（上传后可在详情页改）：</p>
+              <p>
+                <strong>{{ $t('views.finance.templateLib.uploadDialog.help.section2Title') }}</strong
+                >{{ $t('views.finance.templateLib.uploadDialog.help.section2Desc') }}
+              </p>
               <ul>
-                <li><code>*_amount / *_count / *_number / *_total</code> → <strong>number</strong></li>
-                <li><code>*_date / *_at / *_time / *_deadline</code> → <strong>date</strong></li>
-                <li><code>*_desc / *_summary / *_analysis / *_notes / *_content</code> → <strong>long_text</strong></li>
-                <li>其他 → <strong>text</strong></li>
+                <li>
+                  <code>{{ $t('views.finance.templateLib.uploadDialog.help.section2NumberKeys') }}</code>
+                  → <strong>{{ $t('views.finance.templateLib.uploadDialog.help.section2NumberType') }}</strong>
+                </li>
+                <li>
+                  <code>{{ $t('views.finance.templateLib.uploadDialog.help.section2DateKeys') }}</code>
+                  → <strong>{{ $t('views.finance.templateLib.uploadDialog.help.section2DateType') }}</strong>
+                </li>
+                <li>
+                  <code>{{ $t('views.finance.templateLib.uploadDialog.help.section2LongTextKeys') }}</code>
+                  → <strong>{{ $t('views.finance.templateLib.uploadDialog.help.section2LongTextType') }}</strong>
+                </li>
+                <li>
+                  {{ $t('views.finance.templateLib.uploadDialog.help.section2OtherKeys') }}
+                  → <strong>{{ $t('views.finance.templateLib.uploadDialog.help.section2OtherType') }}</strong>
+                </li>
               </ul>
 
-              <p><strong>3. 条件块</strong>（同一段落里整段同一字体，否则跨 run 会解析失败）：</p>
+              <p>
+                <strong>{{ $t('views.finance.templateLib.uploadDialog.help.section3Title') }}</strong
+                >{{ $t('views.finance.templateLib.uploadDialog.help.section3Desc') }}
+              </p>
               <p class="template-help__code">{{ SYNTAX_EXAMPLES.cond }}</p>
 
-              <p><strong>4. 循环</strong>（推荐传字符串数组，避免 <code>item.name</code> 这种属性访问）：</p>
+              <p>
+                <strong>{{ $t('views.finance.templateLib.uploadDialog.help.section4Title') }}</strong
+                >{{ $t('views.finance.templateLib.uploadDialog.help.section4Desc') }}
+              </p>
               <p class="template-help__code">{{ SYNTAX_EXAMPLES.loop }}</p>
 
-              <p><strong>5. 过滤器</strong>（Jinja 标准）：</p>
+              <p>
+                <strong>{{ $t('views.finance.templateLib.uploadDialog.help.section5Title') }}</strong
+                >{{ $t('views.finance.templateLib.uploadDialog.help.section5Desc') }}
+              </p>
               <p class="template-help__code">{{ SYNTAX_EXAMPLES.filter }}</p>
 
               <p style="color: var(--el-color-warning); margin-top: 8px">
-                ⚠️ 进阶语法（条件/循环/过滤器/属性访问）必须把整段表达式放在 Word 里同一 run 内
-                —— 在 Word 中选中整段后重设为同一字体即可。否则 docxtpl 会跨 run 拼接 XML，
-                极易撞 <code>unexpected '.'</code> 等解析错误。
+                {{ $t('views.finance.templateLib.uploadDialog.help.warning') }}
               </p>
             </div>
           </transition>

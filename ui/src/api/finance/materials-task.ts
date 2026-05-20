@@ -73,6 +73,30 @@ export const createTask: (
 }
 
 /**
+ * PUT /finance/workspace/<wid>/materials-task/<pk>
+ * Partial update of editable fields (DRAFT / FAILED / PARSING / MATCHING).
+ * Body shape:
+ *   { title?, requirement_text?, parsed_items?: [{key,label,description?,required?}] }
+ */
+export const updateTask: (
+  workspaceId: string,
+  id: string,
+  body: {
+    title?: string
+    requirement_text?: string
+    parsed_items?: Array<{
+      key: string
+      label: string
+      description?: string
+      required?: boolean
+    }>
+  },
+  loading?: Ref<boolean>,
+) => Promise<Result<MaterialsTask>> = (workspaceId, id, body, loading) => {
+  return put(`${buildPrefix(workspaceId)}/${id}`, body, undefined, loading)
+}
+
+/**
  * DELETE /finance/workspace/<wid>/materials-task/<pk>
  */
 export const deleteTask: (
@@ -214,6 +238,7 @@ export default {
   listTasks,
   getTask,
   createTask,
+  updateTask,
   deleteTask,
   parseRequirements,
   matchDocuments,

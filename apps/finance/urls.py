@@ -25,6 +25,42 @@ urlpatterns = [
         views.FinanceProjectDetailView.as_view(),
         name='project_detail',
     ),
+    # ---- P2 Gate 2: project stage progression ----
+    path(
+        'workspace/<str:workspace_id>/project/<uuid:pk>/stages',
+        views.ProjectStagesView.as_view(),
+        name='project_stages',
+    ),
+    path(
+        'workspace/<str:workspace_id>/project/<uuid:pk>/stages/<str:stage_key>',
+        views.ProjectStageDetailView.as_view(),
+        name='project_stage_detail',
+    ),
+    path(
+        'workspace/<str:workspace_id>/project/<uuid:pk>/advance',
+        views.ProjectStageAdvanceView.as_view(),
+        name='project_stage_advance',
+    ),
+    path(
+        'workspace/<str:workspace_id>/project/<uuid:pk>/rollback',
+        views.ProjectStageRollbackView.as_view(),
+        name='project_stage_rollback',
+    ),
+    path(
+        'workspace/<str:workspace_id>/stage-templates',
+        views.StageTemplatesView.as_view(),
+        name='stage_templates',
+    ),
+    path(
+        'workspace/<str:workspace_id>/progress/gantt',
+        views.ProgressGanttView.as_view(),
+        name='progress_gantt',
+    ),
+    path(
+        'workspace/<str:workspace_id>/progress/dashboard',
+        views.ProgressDashboardView.as_view(),
+        name='progress_dashboard',
+    ),
     # ---- Gate 3 Track A: document templates ----
     path(
         'workspace/<str:workspace_id>/template',
@@ -42,6 +78,11 @@ urlpatterns = [
         'workspace/<str:workspace_id>/template/<uuid:pk>',
         views.DocumentTemplateDetailView.as_view(),
         name='template_detail',
+    ),
+    path(
+        'workspace/<str:workspace_id>/template/<uuid:pk>/suggest-placeholders',
+        views.DocumentTemplatePlaceholderSuggestView.as_view(),
+        name='template_suggest_placeholders',
     ),
     path(
         'workspace/<str:workspace_id>/template/<uuid:pk>/download',

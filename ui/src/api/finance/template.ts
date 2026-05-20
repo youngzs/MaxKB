@@ -5,6 +5,7 @@ import type {
   PageResult,
   Template,
   TemplateListParams,
+  TemplatePlaceholderSuggestResult,
   TemplateUpdate,
 } from './type'
 
@@ -72,6 +73,18 @@ export const updateTemplate: (
 }
 
 /**
+ * POST /finance/workspace/<wid>/template/<pk>/suggest-placeholders
+ * Returns AI / template-text based placeholder label and ai_hint suggestions.
+ */
+export const suggestTemplatePlaceholders: (
+  workspaceId: string,
+  id: string,
+  loading?: Ref<boolean>,
+) => Promise<Result<TemplatePlaceholderSuggestResult>> = (workspaceId, id, loading) => {
+  return post(`${buildPrefix(workspaceId)}/${id}/suggest-placeholders`, {}, undefined, loading)
+}
+
+/**
  * DELETE /finance/workspace/<wid>/template/<pk>
  */
 export const deleteTemplate: (
@@ -133,6 +146,7 @@ export default {
   getTemplate,
   uploadTemplate,
   updateTemplate,
+  suggestTemplatePlaceholders,
   deleteTemplate,
   downloadSampleTemplate,
   downloadTemplate,

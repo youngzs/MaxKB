@@ -38,7 +38,7 @@
           @click="onDownload"
         >
           <AppIcon iconName="app-download" class="mr-4" />
-          下载此模板
+          {{ $t('views.finance.templateLib.detailDownload') }}
         </el-button>
         <el-tag
           v-if="template"
@@ -55,7 +55,20 @@
 
     <el-card v-if="template" shadow="never" class="mb-16">
       <template #header>
-        <strong>{{ $t('views.finance.templateLib.placeholderEditor.title') }}</strong>
+        <div class="finance-template-detail__card-header">
+          <strong>{{ $t('views.finance.templateLib.placeholderEditor.title') }}</strong>
+          <el-button
+            v-if="canEdit && form.placeholders.length > 0"
+            type="primary"
+            plain
+            size="small"
+            :loading="suggesting"
+            @click="handleSuggestPlaceholders"
+          >
+            <AppIcon iconName="app-magic-stick" class="mr-4" />
+            {{ $t('views.finance.templateLib.placeholderEditor.suggest') }}
+          </el-button>
+        </div>
       </template>
 
       <el-row :gutter="16" class="mb-16">
@@ -136,20 +149,15 @@
         <el-table-column min-width="280">
           <template #header>
             <span style="display: inline-flex; align-items: center; gap: 4px">
-              AI 填充提示词（可选）
+              {{ $t('views.finance.templateLib.placeholderEditor.aiHintColumn') }}
               <el-tooltip placement="top">
                 <template #content>
                   <div style="max-width: 320px; line-height: 1.6">
-                    <strong>这一列只对"AI 一键填充"生效，人工填表时无需关心，留空即可。</strong>
+                    <strong>{{ $t('views.finance.templateLib.placeholderEditor.aiHintTooltip.intro') }}</strong>
                     <br />
-                    填了什么：会作为 system prompt 的一部分传给大模型，例如填
-                    <code style="background: #444; padding: 1px 4px; border-radius: 3px">
-                      公司全称带"有限公司"
-                    </code>
-                    AI 就不会输出简称。
+                    {{ $t('views.finance.templateLib.placeholderEditor.aiHintTooltip.whatLabel') }}{{ $t('views.finance.templateLib.placeholderEditor.aiHintTooltip.what') }}
                     <br /><br />
-                    不会发生：<strong>不会</strong>直接替换占位符 ——
-                    用户在生成文档时输入的值或 AI 生成的值才是最终内容。
+                    {{ $t('views.finance.templateLib.placeholderEditor.aiHintTooltip.whatNotLabel') }}<strong>{{ $t('views.finance.templateLib.placeholderEditor.aiHintTooltip.whatNot') }}</strong>
                   </div>
                 </template>
                 <el-icon style="font-size: 14px; color: var(--el-color-info); cursor: help">
@@ -224,6 +232,7 @@ const { user, financeTemplate: store } = useStore()
 const loading = ref(false)
 const saving = ref(false)
 const downloadLoading = ref(false)
+const suggesting = ref(false)
 const template = ref<Template | null>(null)
 const editingName = ref(false)
 
@@ -324,7 +333,7 @@ const hydrate = (tpl: Template) => {
     key: p.key,
     label: p.label,
     type: p.type,
-    required: p.required,
+    required: p.required ?? false,
     ai_hint: p.ai_hint,
     enum_options: [...(p.enum_options || [])],
   }))
@@ -385,6 +394,32 @@ const handleSave = async () => {
   }
 }
 
+const handleSuggestPlaceholders = async () => {
+  if (!template.value) return
+  const workspaceId = user.getWorkspaceId()
+  if (!workspaceId) return
+  suggesting.value = true
+  try {
+    const suggestions = await store.suggestPlaceholders(workspaceId, template.value.id)
+    const byKey = new Map(suggestions.map((item) => [item.key, item]))
+    form.placeholders = form.placeholders.map((item) => {
+      const suggested = byKey.get(item.key)
+      if (!suggested) return { ...item, required: item.required ?? false }
+      return {
+        ...item,
+        label: suggested.label || item.label,
+        type: suggested.type || item.type,
+        required: suggested.required ?? false,
+        ai_hint: suggested.ai_hint || item.ai_hint,
+        enum_options: suggested.enum_options?.length ? suggested.enum_options : item.enum_options,
+      }
+    })
+    MsgSuccess(t('views.finance.templateLib.placeholderEditor.suggestSuccess'))
+  } finally {
+    suggesting.value = false
+  }
+}
+
 watch(
   () => route.params.pk,
   () => {
@@ -399,8 +434,11 @@ onMounted(() => {
 
 <style lang="scss" scoped>
 .finance-template-detail {
+  height: 100%;
+  overflow-y: auto;
   min-height: calc(100vh - 80px);
   background: var(--el-bg-color);
+  box-sizing: border-box;
 
   &__title {
     margin: 0;
@@ -415,6 +453,13 @@ onMounted(() => {
       color: var(--el-text-color-regular);
       margin-bottom: 4px;
     }
+  }
+
+  &__card-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
   }
 
   &__key {

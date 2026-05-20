@@ -61,6 +61,7 @@
             <el-select
               v-model="form.status"
               :placeholder="$t('views.finance.project.placeholders.status')"
+              :disabled="isEdit"
               style="width: 100%"
             >
               <el-option
@@ -70,6 +71,9 @@
                 :value="opt.value"
               />
             </el-select>
+            <div v-if="isEdit" class="field-hint">
+              {{ $t('views.finance.project.statusManagedHint') }}
+            </div>
           </el-form-item>
         </el-col>
         <el-col :span="12">
@@ -117,6 +121,37 @@
         </el-col>
       </el-row>
 
+      <el-row :gutter="16">
+        <el-col :span="12">
+          <el-form-item :label="$t('views.finance.project.fields.counterparty')">
+            <el-input
+              v-model="form.counterparty"
+              maxlength="200"
+              :placeholder="$t('views.finance.project.placeholders.counterparty')"
+            />
+          </el-form-item>
+        </el-col>
+        <el-col :span="12">
+          <el-form-item :label="$t('views.finance.project.fields.owner')">
+            <el-select
+              v-model="form.owner_id"
+              filterable
+              clearable
+              :placeholder="$t('views.finance.project.placeholders.owner')"
+              :loading="ownerLoading"
+              style="width: 100%"
+            >
+              <el-option
+                v-for="u in ownerOptions"
+                :key="u.value"
+                :label="u.label"
+                :value="u.value"
+              />
+            </el-select>
+          </el-form-item>
+        </el-col>
+      </el-row>
+
       <el-form-item :label="$t('views.finance.project.fields.knowledgeBaseIds')">
         <el-select
           v-model="form.knowledge_base_ids"
@@ -147,6 +182,31 @@
           show-word-limit
         />
       </el-form-item>
+
+      <el-form-item
+        v-if="!isEdit && currentStages.length > 0"
+        :label="$t('views.finance.project.plannedStages')"
+      >
+        <div class="planned-stages">
+          <div class="planned-stages__hint">
+            {{ $t('views.finance.project.plannedStagesHint') }}
+          </div>
+          <div
+            v-for="stage in currentStages"
+            :key="stage.stage_key"
+            class="planned-stages__row"
+          >
+            <span class="planned-stages__label">{{ stage.label }}</span>
+            <el-date-picker
+              v-model="stagePlanMap[stage.stage_key]"
+              type="date"
+              value-format="YYYY-MM-DDTHH:mm:ss"
+              :placeholder="$t('views.finance.project.placeholders.plannedAt')"
+              style="width: 200px"
+            />
+          </div>
+        </div>
+      </el-form-item>
     </el-form>
 
     <template #footer>
@@ -168,8 +228,18 @@ import type { FormInstance, FormRules } from 'element-plus'
 import { MsgSuccess } from '@/utils/message'
 import { t } from '@/locales'
 import useStore from '@/stores'
-import type { Project, ProjectInput, ProjectStatus, ProjectType } from '@/api/finance/type'
+import type {
+  Project,
+  ProjectInput,
+  ProjectStatus,
+  ProjectType,
+  StagePlanInput,
+  StageTemplateItem,
+  StageTemplatesMap,
+} from '@/api/finance/type'
+import { getStageTemplates } from '@/api/finance/project'
 import KnowledgeApi from '@/api/knowledge/knowledge'
+import UserApi from '@/api/user/user'
 
 interface KnowledgeOption {
   id: string
@@ -235,6 +305,8 @@ const emptyForm = (): ProjectInput => ({
   industry_code: '',
   knowledge_base_ids: [],
   description: '',
+  owner_id: null,
+  counterparty: '',
 })
 
 const form = ref<ProjectInput>(emptyForm())
@@ -250,6 +322,53 @@ const targetAmountNumber = computed<number | undefined>({
     form.value.target_amount = val === undefined || val === null ? '' : String(val)
   },
 })
+
+/* --- P2 进度归集：项目负责人选择 + 阶段计划时间 --- */
+
+interface OwnerOption {
+  label: string
+  value: string
+}
+const ownerLoading = ref(false)
+const ownerOptions = ref<OwnerOption[]>([])
+
+async function loadOwnerOptions() {
+  ownerLoading.value = true
+  try {
+    const res: any = await UserApi.getUserList({})
+    ownerOptions.value = Array.isArray(res?.data)
+      ? res.data.map((u: any) => ({
+          label: u.nick_name || u.username || String(u.id),
+          value: String(u.id),
+        }))
+      : []
+  } catch (e) {
+    ownerOptions.value = []
+  } finally {
+    ownerLoading.value = false
+  }
+}
+
+// 五套阶段模板（静态配置）—— 拉一次后缓存。
+const stageTemplates = ref<StageTemplatesMap | null>(null)
+// 当前所选项目类型的有序子阶段。
+const currentStages = computed<StageTemplateItem[]>(
+  () => stageTemplates.value?.[form.value.project_type] ?? [],
+)
+// 创建表单逐阶段填写的计划完成时间，键为 stage_key。
+const stagePlanMap = ref<Record<string, string | null>>({})
+
+async function loadStageTemplates() {
+  if (stageTemplates.value) return
+  const workspaceId = user.getWorkspaceId()
+  if (!workspaceId) return
+  try {
+    const res = await getStageTemplates(workspaceId)
+    stageTemplates.value = res?.data ?? null
+  } catch (e) {
+    stageTemplates.value = null
+  }
+}
 
 const projectTypeOptions: { value: ProjectType; label: string }[] = [
   { value: 'bank_loan', label: t('views.finance.project.projectType.bank_loan') },
@@ -307,6 +426,9 @@ watch(
     if (open) {
       // 每次打开都重新拉一次，覆盖创建/删除知识库后的列表漂移
       loadKnowledgeList()
+      loadOwnerOptions()
+      loadStageTemplates()
+      stagePlanMap.value = {}
       if (props.initial) {
         const init = props.initial
         form.value = {
@@ -320,6 +442,8 @@ watch(
           industry_code: init.industry_code,
           knowledge_base_ids: [...(init.knowledge_base_ids || [])],
           description: init.description,
+          owner_id: init.owner_id ?? null,
+          counterparty: init.counterparty || '',
         }
       } else {
         form.value = emptyForm()
@@ -331,6 +455,7 @@ watch(
 
 const handleClosed = () => {
   form.value = emptyForm()
+  stagePlanMap.value = {}
   formRef.value?.clearValidate()
 }
 
@@ -348,6 +473,18 @@ const handleSubmit = async () => {
         form.value.target_amount === '' || form.value.target_amount === undefined
           ? null
           : form.value.target_amount,
+      // el-select clearable 清空会得到 ''，统一收敛成 null。
+      owner_id: form.value.owner_id || null,
+    }
+    // 计划完成时间只在创建时携带 —— 取已填日期的阶段（DR-P2-04）。
+    if (!isEdit.value) {
+      const plans: StagePlanInput[] = currentStages.value
+        .map((s) => ({
+          stage_key: s.stage_key,
+          planned_at: stagePlanMap.value[s.stage_key] || null,
+        }))
+        .filter((p) => !!p.planned_at)
+      payload.stage_plans = plans
     }
 
     loading.value = true
@@ -376,5 +513,40 @@ const handleSubmit = async () => {
   display: flex;
   justify-content: flex-end;
   gap: 8px;
+}
+
+.field-hint {
+  margin-top: 4px;
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--el-text-color-secondary);
+}
+
+.planned-stages {
+  width: 100%;
+
+  &__hint {
+    margin-bottom: 8px;
+    font-size: 12px;
+    line-height: 1.4;
+    color: var(--el-text-color-secondary);
+  }
+
+  &__row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 8px;
+
+    &:last-child {
+      margin-bottom: 0;
+    }
+  }
+
+  &__label {
+    font-size: 14px;
+    color: var(--el-text-color-regular);
+  }
 }
 </style>

@@ -68,6 +68,16 @@ class FinanceProject(models.Model):
     industry_code = models.CharField(max_length=32, blank=True, default='', verbose_name='行业代码')
     knowledge_base_ids = models.JSONField(default=list, verbose_name='关联知识库白名单')
     description = models.TextField(blank=True, default='', verbose_name='项目描述')
+    # --- P2「进度归集」新增字段（见 docs/finance-p2-progress-design.md §5.1）---
+    owner_id = models.UUIDField(
+        null=True, blank=True, verbose_name='项目负责人id'
+    )  # DR-P2-03；迁移时回填 = created_by
+    counterparty = models.CharField(
+        max_length=200, blank=True, default='', verbose_name='主要对手方机构'
+    )  # DR-P2-02 free-text 字段，不拆独立实体
+    current_stage_key = models.CharField(
+        max_length=32, blank=True, default='', verbose_name='当前子阶段key'
+    )  # 指向类型模板里的细阶段；大状态 status 由它派生
     is_deleted = models.BooleanField(default=False, db_index=True, verbose_name='是否已删除')
     created_by = models.UUIDField(verbose_name='创建人id')
     created_at = models.DateTimeField(auto_now_add=True, verbose_name='创建时间')

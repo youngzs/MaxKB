@@ -174,7 +174,21 @@
         <!-- Pane 1: requirement items -->
         <div class="finance-materials-detail__pane finance-materials-detail__pane--p1">
           <div class="finance-materials-detail__pane-header">
-            {{ $t('views.finance.materials.detail.pane1Title') }}
+            <span>{{ $t('views.finance.materials.detail.pane1Title') }}</span>
+            <!-- 编辑入口 —— 仅在 task 处于可编辑状态时显示。
+                 后端 _EDITABLE_STATUSES = {DRAFT, FAILED, PARSING, MATCHING}，
+                 前端 v-if 提早过滤，避免 reviewer 看到无意义的按钮。 -->
+            <el-button
+              v-if="canEdit && isItemsEditable"
+              link
+              type="primary"
+              size="small"
+              class="finance-materials-detail__pane-edit-btn"
+              @click="editItemsDialogVisible = true"
+            >
+              <AppIcon iconName="app-edit-outlined" class="mr-4" />
+              {{ $t('views.finance.materials.detail.pane1EditTrigger') }}
+            </el-button>
           </div>
           <ul class="finance-materials-detail__items">
             <li
@@ -556,6 +570,13 @@
       @sent="onSent"
     />
 
+    <!-- Edit requirement-items dialog (PUT /<pk>) -->
+    <EditRequirementsDialog
+      v-model="editItemsDialogVisible"
+      :task="task"
+      @success="onItemsUpdated"
+    />
+
     <!-- Workflow run drawer (Gate 7 Track B) -->
     <WorkflowRunDrawer
       v-if="task"
@@ -588,6 +609,7 @@ import type {
 } from '@/api/finance/type'
 import SensitivityBadge from '@/components/sensitivity-badge/index.vue'
 import SendMaterialsDialog from './components/SendMaterialsDialog.vue'
+import EditRequirementsDialog from './components/EditRequirementsDialog.vue'
 import WorkflowRunDrawer from '../components/WorkflowRunDrawer.vue'
 import KnowledgeApi from '@/api/knowledge/knowledge'
 import DocumentApi from '@/api/knowledge/document'
@@ -677,6 +699,32 @@ const canSend = computed(() =>
     'OR',
   ),
 )
+
+// ---- Edit requirement-items dialog ----
+// 后端 _EDITABLE_STATUSES 镜像。DRAFT/FAILED/PARSING/MATCHING 才允许编辑；
+// pending_review / approved / sent / rejected 都会冻结需求项（审计完整性）。
+const _EDITABLE_TASK_STATUSES: MaterialsTaskStatus[] = [
+  'draft',
+  'failed',
+  'parsing',
+  'matching',
+]
+const isItemsEditable = computed(() =>
+  !!task.value && _EDITABLE_TASK_STATUSES.includes(task.value.status),
+)
+const editItemsDialogVisible = ref(false)
+
+function onItemsUpdated(updated: MaterialsTask) {
+  // `task` 是 computed(() => store.selected) —— 只读。store.update 已经把
+  // store.selected 同步到新值，这里 task.value 会跟着更新。
+  // 焦点项保护：如果之前选中的需求项被删除了，重新指向第一项。
+  if (focusedItemKey.value) {
+    const keys = (updated.parsed_items || []).map((it) => it.key)
+    if (!keys.includes(focusedItemKey.value)) {
+      focusedItemKey.value = keys[0] || ''
+    }
+  }
+}
 
 // ---- Send dialog + send log (Gate 5 Track B) ----
 const sendDialogVisible = ref(false)
@@ -1296,12 +1344,19 @@ onBeforeUnmount(() => {
   }
 
   &__pane-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
     padding: 12px 16px;
     font-weight: 600;
     border-bottom: 1px solid var(--el-border-color-lighter);
     background: var(--el-fill-color-light);
     font-size: 14px;
     color: var(--el-text-color-primary);
+  }
+  &__pane-edit-btn {
+    font-weight: 400;
   }
 
   &__pane-empty {

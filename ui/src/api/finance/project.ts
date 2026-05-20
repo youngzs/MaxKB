@@ -1,7 +1,13 @@
 import { type Ref } from 'vue'
 import type { Result } from '@/request/Result'
 import { get, post, put, del } from '@/request/index'
-import type { ListParams, PageResult, Project, ProjectInput } from './type'
+import type {
+  ListParams,
+  PageResult,
+  Project,
+  ProjectInput,
+  StageTemplatesMap,
+} from './type'
 
 /**
  * Finance project API client.
@@ -68,10 +74,22 @@ export const deleteProject: (
   return del(`${buildPrefix(workspaceId)}/${id}`, undefined, {}, loading)
 }
 
+/**
+ * GET /finance/workspace/<wid>/stage-templates
+ * 五套 project_type 阶段模板 —— 创建项目表单按所选类型列出阶段。
+ */
+export const getStageTemplates: (
+  workspaceId: string,
+  loading?: Ref<boolean>,
+) => Promise<Result<StageTemplatesMap>> = (workspaceId, loading) => {
+  return get(`/finance/workspace/${workspaceId}/stage-templates`, undefined, loading)
+}
+
 export default {
   listProjects,
   getProject,
   createProject,
   updateProject,
   deleteProject,
+  getStageTemplates,
 }

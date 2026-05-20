@@ -83,10 +83,19 @@ class DoAIFillTest(TestCase):
     def test_chat_raises_returns_stub_for_that_key(self):
         # One key raises, the other returns a value — verify the loop
         # absorbs the failure and continues.
+        #
+        # 注：之前的版本用 `'金额' in system` 当区分键 —— 但项目背景行里就
+        # hardcode 着「金额 {target_amount} {currency}」，**每个**提示词都含 "金额"，
+        # 等价于全 raise。改用 `'甲方名称' in system`（k2 的 label 不含此串）来
+        # 正确区分批量 / 单字段两条调用。
         def fake(workspace_id, system, user):
-            if '金额' in system:
-                raise RuntimeError('model offline')
-            return '甲方公司'
+            # Single-key fallback prompts are unambiguous: k1 has label
+            # "甲方名称" inside its single prompt, k2 doesn't. The batched
+            # prompt contains BOTH labels, so we make it raise on the batched
+            # path and let the per-key fallback resolve each independently.
+            if '占位符标签：甲方名称' in system:
+                return '甲方公司'
+            raise RuntimeError('model offline')
 
         with patch(_PATCH_TARGET, side_effect=fake):
             result = _do_ai_fill(self.template, self.project, ['k1', 'k2'], workspace_id='ws-1')

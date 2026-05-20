@@ -23,6 +23,45 @@ class MaterialsTaskCreateSerializer(serializers.Serializer):
     requirement_file = serializers.FileField(required=False, allow_null=True)
 
 
+class MaterialsTaskParsedItemSerializer(serializers.Serializer):
+    """
+    单个 parsed_item 的 schema —— `{key, label, description, required}`。
+    在 MaterialsTaskUpdateSerializer 里作为 child 来校验整组 parsed_items
+    数组（PUT 编辑界面允许用户添加/删除/修改需求项）。
+    """
+    key = serializers.CharField(max_length=64)
+    label = serializers.CharField(max_length=200)
+    description = serializers.CharField(
+        max_length=2000, required=False, allow_blank=True, default=''
+    )
+    required = serializers.BooleanField(required=False, default=True)
+
+
+class MaterialsTaskUpdateSerializer(serializers.Serializer):
+    """
+    PUT /<pk> —— 编辑 DRAFT/FAILED 状态下的材料任务元数据。
+
+    所有字段都是可选的（partial update）：
+      - `title`: 任务标题
+      - `requirement_text`: 需求清单原文（修改后通常要重新跑 parse 才会
+        刷新 parsed_items；前端可在保存后选择性触发 parse 接口）
+      - `parsed_items`: 需求项数组（**手动**整理时使用，不会重新跑 LLM；
+        与 `requirement_text` 是互补关系：前者是原文，后者是结构化结果，
+        二者皆可单独编辑）
+
+    审核中/已审/已发送的任务**不允许**修改 —— 由 view 层 _do_update 保证。
+    """
+    title = serializers.CharField(max_length=200, required=False)
+    requirement_text = serializers.CharField(
+        required=False, allow_blank=True, trim_whitespace=False
+    )
+    parsed_items = serializers.ListField(
+        child=MaterialsTaskParsedItemSerializer(),
+        required=False,
+        allow_empty=True,
+    )
+
+
 class MaterialsTaskUpdateSelectionSerializer(serializers.Serializer):
     """
     PUT /selection — user-curated final set of document_ids the user

@@ -23,14 +23,18 @@
     <!-- Step 1: select template -->
     <el-card v-show="active === 0" shadow="never" class="mb-16">
       <div class="finance-wizard__filter-bar mb-16">
+        <!--
+          Element Plus 3.0 — `label` 作为 value 已废弃；改用显式 `value`。
+          这里 slot 内容就是显示文本，所以保留 slot 即可。
+        -->
         <el-radio-group v-model="templateScenarioFilter" @change="onTemplateScenarioChange">
-          <el-radio-button label="">
+          <el-radio-button value="">
             {{ $t('views.finance.templateLib.scenario.all') }}
           </el-radio-button>
           <el-radio-button
             v-for="opt in scenarioOptions"
             :key="opt.value"
-            :label="opt.value"
+            :value="opt.value"
           >
             {{ opt.label }}
           </el-radio-button>
@@ -183,87 +187,99 @@
         </el-button>
       </div>
 
+      <!--
+        Grid 布局：short 字段（text/number/date/enum）2 列摆放，long_text
+        独占整行（textarea 需要横向空间放下多行内容）。响应式回落：
+          xs/sm 1 列，md+ 起 long_text 始终 24，其他 span 12。
+        旧版用单列堆叠 13+ 字段时滚动很长，且每个输入只用了不到一半的宽度。
+      -->
       <el-form
         v-if="selectedTemplate && selectedTemplate.placeholders.length > 0"
         label-position="top"
         require-asterisk-position="right"
       >
-        <el-form-item
-          v-for="ph in selectedTemplate.placeholders"
-          :key="ph.key"
-          :required="ph.required"
-        >
-          <template #label>
-            <span>{{ displayLabel(ph) }}</span>
-            <code class="finance-wizard__key" :title="ph.key">{{ formatKey(ph.key) }}</code>
-          </template>
+        <el-row :gutter="20">
+          <el-col
+            v-for="ph in selectedTemplate.placeholders"
+            :key="ph.key"
+            :xs="24"
+            :sm="ph.type === 'long_text' ? 24 : 12"
+            :md="ph.type === 'long_text' ? 24 : 12"
+          >
+            <el-form-item :required="ph.required">
+              <template #label>
+                <span>{{ displayLabel(ph) }}</span>
+                <code class="finance-wizard__key" :title="ph.key">{{ formatKey(ph.key) }}</code>
+              </template>
 
-          <template v-if="ph.type === 'text'">
-            <el-input v-model="placeholderValues[ph.key] as string" maxlength="500" />
-          </template>
+              <template v-if="ph.type === 'text'">
+                <el-input v-model="placeholderValues[ph.key] as string" maxlength="500" />
+              </template>
 
-          <template v-else-if="ph.type === 'long_text'">
-            <div
-              class="finance-wizard__long-text"
-              :class="{ 'finance-wizard__long-text--flash': flashKeys[ph.key] }"
-            >
-              <el-input
-                v-model="placeholderValues[ph.key] as string"
-                type="textarea"
-                :rows="4"
-                :disabled="loadingByKey[ph.key]"
-              />
-              <el-button
-                :loading="loadingByKey[ph.key]"
-                size="small"
-                plain
-                type="primary"
-                class="finance-wizard__ai-btn"
-                @click="aiFillOne(ph.key)"
-              >
-                <template v-if="loadingByKey[ph.key]">
-                  {{ $t('views.finance.documentsLib.wizard.aiFillBusy') }}
-                </template>
-                <template v-else>
-                  <AppIcon iconName="app-magic-stick" class="mr-4" />
-                  {{ $t('views.finance.documentsLib.wizard.aiFillOne') }}
-                </template>
-              </el-button>
-            </div>
-          </template>
+              <template v-else-if="ph.type === 'long_text'">
+                <div
+                  class="finance-wizard__long-text"
+                  :class="{ 'finance-wizard__long-text--flash': flashKeys[ph.key] }"
+                >
+                  <el-input
+                    v-model="placeholderValues[ph.key] as string"
+                    type="textarea"
+                    :rows="4"
+                    :disabled="loadingByKey[ph.key]"
+                  />
+                  <el-button
+                    :loading="loadingByKey[ph.key]"
+                    size="small"
+                    plain
+                    type="primary"
+                    class="finance-wizard__ai-btn"
+                    @click="aiFillOne(ph.key)"
+                  >
+                    <template v-if="loadingByKey[ph.key]">
+                      {{ $t('views.finance.documentsLib.wizard.aiFillBusy') }}
+                    </template>
+                    <template v-else>
+                      <AppIcon iconName="app-magic-stick" class="mr-4" />
+                      {{ $t('views.finance.documentsLib.wizard.aiFillOne') }}
+                    </template>
+                  </el-button>
+                </div>
+              </template>
 
-          <template v-else-if="ph.type === 'number'">
-            <el-input-number
-              v-model="numericValues[ph.key]"
-              style="width: 100%"
-              :precision="2"
-              :step="1"
-              @change="(v: number | undefined) => (placeholderValues[ph.key] = v ?? '')"
-            />
-          </template>
+              <template v-else-if="ph.type === 'number'">
+                <el-input-number
+                  v-model="numericValues[ph.key]"
+                  style="width: 100%"
+                  :precision="2"
+                  :step="1"
+                  @change="(v: number | undefined) => (placeholderValues[ph.key] = v ?? '')"
+                />
+              </template>
 
-          <template v-else-if="ph.type === 'date'">
-            <el-date-picker
-              v-model="placeholderValues[ph.key] as string"
-              type="date"
-              value-format="YYYY-MM-DD"
-              style="width: 100%"
-            />
-          </template>
+              <template v-else-if="ph.type === 'date'">
+                <el-date-picker
+                  v-model="placeholderValues[ph.key] as string"
+                  type="date"
+                  value-format="YYYY-MM-DD"
+                  style="width: 100%"
+                />
+              </template>
 
-          <template v-else-if="ph.type === 'enum'">
-            <el-select v-model="placeholderValues[ph.key] as string" style="width: 100%">
-              <el-option
-                v-for="opt in ph.enum_options"
-                :key="opt"
-                :label="opt"
-                :value="opt"
-              />
-            </el-select>
-          </template>
+              <template v-else-if="ph.type === 'enum'">
+                <el-select v-model="placeholderValues[ph.key] as string" style="width: 100%">
+                  <el-option
+                    v-for="opt in ph.enum_options"
+                    :key="opt"
+                    :label="opt"
+                    :value="opt"
+                  />
+                </el-select>
+              </template>
 
-          <div v-if="ph.ai_hint" class="finance-wizard__hint">{{ ph.ai_hint }}</div>
-        </el-form-item>
+              <div v-if="ph.ai_hint" class="finance-wizard__hint">{{ ph.ai_hint }}</div>
+            </el-form-item>
+          </el-col>
+        </el-row>
       </el-form>
 
       <div v-else class="finance-wizard__empty">
@@ -836,6 +852,16 @@ onMounted(async () => {
     display: flex;
     justify-content: flex-end;
     gap: 8px;
+    // sticky 到视口底部 —— 13+ 字段的长表单滚动时上一步/下一步/生成
+    // 按钮始终可见。背景 + 上分隔线 + 阴影避免下方内容透过来。
+    position: sticky;
+    bottom: 0;
+    background: var(--el-bg-color);
+    padding: 12px 16px;
+    margin: 16px -16px 0;
+    border-top: 1px solid var(--el-border-color-lighter);
+    box-shadow: 0 -2px 8px rgba(0, 0, 0, 0.04);
+    z-index: 1;
   }
 }
 </style>

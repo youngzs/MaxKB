@@ -58,6 +58,7 @@ from finance.serializers.materials_task import (
     MaterialsTaskPackSerializer,
     MaterialsTaskReviewSerializer,
     MaterialsTaskUpdateSelectionSerializer,
+    MaterialsTaskUpdateSerializer,
 )
 from finance.service.audit import audit_log
 from finance.service.document_generator import _load_bytes, _save_bytes
@@ -196,6 +197,65 @@ def _do_match(instance: MaterialsTask, workspace_id, user_max_sensitivity) -> Ma
     instance.save(
         update_fields=['matched_documents', 'error_message', 'updated_at']
     )
+    return instance
+
+
+# 允许编辑（PUT requirement_text / parsed_items / title）的状态白名单。
+# 一旦任务进入 PENDING_REVIEW 或后续审核/打包/发送状态，需求清单就要冻结 ——
+# 否则就破坏审计链：审核者拍板的内容 ≠ 实际打包发送的内容。
+_EDITABLE_STATUSES = frozenset(
+    [
+        MaterialsTaskStatus.DRAFT,
+        MaterialsTaskStatus.FAILED,
+        # PARSING / MATCHING 都是过渡态（异步 task 持有的中间状态），用户
+        # 看到的多半是僵死的任务，允许编辑 + 重新触发更友好。
+        MaterialsTaskStatus.PARSING,
+        MaterialsTaskStatus.MATCHING,
+    ]
+)
+
+
+def _do_update(instance: MaterialsTask, payload: dict) -> MaterialsTask:
+    """
+    Patch the editable subset of a MaterialsTask.
+
+    Only DRAFT/FAILED/PARSING/MATCHING tasks are editable —— reviewed or
+    sent tasks are immutable for audit integrity. `parsed_items` updates
+    are accepted verbatim (no re-parse) so users can manually curate the
+    requirement list. Call /parse separately to re-run the LLM.
+
+    Returns the updated instance. Never silently no-ops on unknown
+    keys — those are rejected at the serializer layer.
+    """
+    if instance.status not in _EDITABLE_STATUSES:
+        raise AppApiException(
+            400,
+            _('Cannot edit materials task in %(status)s status') % {'status': instance.status},
+        )
+
+    update_fields: list[str] = []
+    if 'title' in payload:
+        instance.title = payload['title']
+        update_fields.append('title')
+    if 'requirement_text' in payload:
+        instance.requirement_text = payload['requirement_text']
+        update_fields.append('requirement_text')
+    if 'parsed_items' in payload:
+        # serializer 已经按 schema 校验；这里 normalise booleans 和 strip 空白。
+        instance.parsed_items = [
+            {
+                'key': item['key'].strip(),
+                'label': item['label'].strip(),
+                'description': (item.get('description') or '').strip(),
+                'required': bool(item.get('required', True)),
+            }
+            for item in payload['parsed_items']
+        ]
+        update_fields.append('parsed_items')
+
+    if update_fields:
+        update_fields.append('updated_at')
+        instance.save(update_fields=update_fields)
     return instance
 
 
@@ -440,6 +500,28 @@ class MaterialsTaskDetailView(APIView):
     )
     def get(self, request: Request, workspace_id, pk):
         instance = _get_or_404(workspace_id, pk)
+        return result.success(MaterialsTaskOutputSerializer(instance).data)
+
+    @extend_schema(
+        methods=['PUT'],
+        summary=_('Update materials task'),
+        request=MaterialsTaskUpdateSerializer,
+        responses=MaterialsTaskOutputSerializer,
+        tags=[_('Finance')],  # type: ignore
+        operation_id=_('Update materials task'),  # type: ignore
+    )
+    @has_permissions(
+        PermissionConstants.FINANCE_EDIT.get_workspace_permission(),
+        RoleConstants.WORKSPACE_MANAGE.get_workspace_role(),
+    )
+    @audit_log(action=FinanceAuditAction.UPDATE, target_type=FinanceAuditTargetType.MATERIALS_TASK)
+    def put(self, request: Request, workspace_id, pk):
+        instance = _get_or_404(workspace_id, pk)
+        body = MaterialsTaskUpdateSerializer(data=request.data)
+        body.is_valid(raise_exception=True)
+        # validated_data 只含显式传入的字段，未传的字段不会出现 —— 用 dict()
+        # 显式持有再交给 _do_update，避免 partial-update 时把缺省字段也覆盖掉。
+        instance = _do_update(instance, dict(body.validated_data))
         return result.success(MaterialsTaskOutputSerializer(instance).data)
 
     @extend_schema(

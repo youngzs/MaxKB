@@ -20,6 +20,7 @@ from .document_template import (
     DocumentTemplateDetailView,
     DocumentTemplateDownloadView,
     DocumentTemplateListView,
+    DocumentTemplatePlaceholderSuggestView,
     DocumentTemplateSampleView,
 )
 from .email_send_log import EmailSendLogListView
@@ -40,6 +41,14 @@ from .materials_task import (
 from .healthz import FinanceHealthzView
 from .ping import FinancePingView
 from .project import FinanceProjectDetailView, FinanceProjectListView
+from .progress import ProgressDashboardView, ProgressGanttView
+from .project_stage import (
+    ProjectStageAdvanceView,
+    ProjectStageDetailView,
+    ProjectStageRollbackView,
+    ProjectStagesView,
+    StageTemplatesView,
+)
 from .signed_download import SignedDownloadView
 from .smtp_config import (
     SmtpConfigDetailView,
@@ -62,10 +71,18 @@ __all__ = [
     'DocumentSensitivityView',
     'FinanceProjectListView',
     'FinanceProjectDetailView',
+    'ProjectStagesView',
+    'ProjectStageDetailView',
+    'ProjectStageAdvanceView',
+    'ProjectStageRollbackView',
+    'StageTemplatesView',
+    'ProgressGanttView',
+    'ProgressDashboardView',
     'DocumentTemplateListView',
     'DocumentTemplateDetailView',
     'DocumentTemplateSampleView',
     'DocumentTemplateDownloadView',
+    'DocumentTemplatePlaceholderSuggestView',
     'DocumentGenerationListView',
     'DocumentGenerationDetailView',
     'DocumentGenerationConfirmView',

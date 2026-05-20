@@ -9,6 +9,18 @@ from rest_framework import serializers
 from finance.models import FinanceProject, FinanceProjectStatus, FinanceProjectType
 
 
+class StagePlanInputSerializer(serializers.Serializer):
+    """
+    创建项目时单个子阶段的计划完成时间录入项（DR-P2-04 手填）。
+
+    `stage_key` 必须属于该项目类型的阶段模板；`planned_at` 可留空。
+    校验由 view 层按 project_type 对照模板完成。
+    """
+
+    stage_key = serializers.CharField(max_length=32)
+    planned_at = serializers.DateTimeField(required=False, allow_null=True)
+
+
 class FinanceProjectInputSerializer(serializers.Serializer):
     """
     Body validator for POST (create) and PUT (full-update) routes.
@@ -17,6 +29,11 @@ class FinanceProjectInputSerializer(serializers.Serializer):
     where appropriate; for now we keep the spec simple — only name and
     project_type are required, everything else is optional with sensible
     defaults defined on the model.
+
+    P2 注意：`status` 仅在 **创建** 时作为起始大状态种子（据此反查起始子阶段
+    并预生成阶段行）；项目创建后大状态由 current_stage_key 派生，PUT 不再据此
+    改写（view 层保证，唯一例外是置为 terminated）。`stage_plans` 也只在创建
+    时生效。
     """
 
     name = serializers.CharField(max_length=200)
@@ -39,6 +56,14 @@ class FinanceProjectInputSerializer(serializers.Serializer):
         child=serializers.UUIDField(), required=False, default=list
     )
     description = serializers.CharField(required=False, allow_blank=True, default='')
+    # --- P2「进度归集」字段 ---
+    owner_id = serializers.UUIDField(required=False, allow_null=True)  # DR-P2-03
+    counterparty = serializers.CharField(
+        max_length=200, required=False, allow_blank=True, default=''
+    )  # DR-P2-02
+    stage_plans = serializers.ListField(
+        child=StagePlanInputSerializer(), required=False, default=list
+    )  # DR-P2-04 —— 仅创建时生效
 
 
 class FinanceProjectOutputSerializer(serializers.ModelSerializer):
@@ -47,6 +72,7 @@ class FinanceProjectOutputSerializer(serializers.ModelSerializer):
     id = serializers.UUIDField(format='hex_verbose')
     workspace_id = serializers.CharField(max_length=64)
     created_by = serializers.UUIDField(format='hex_verbose')
+    owner_id = serializers.UUIDField(format='hex_verbose', allow_null=True)
 
     class Meta:
         model = FinanceProject
@@ -63,6 +89,9 @@ class FinanceProjectOutputSerializer(serializers.ModelSerializer):
             'industry_code',
             'knowledge_base_ids',
             'description',
+            'owner_id',
+            'counterparty',
+            'current_stage_key',
             'created_by',
             'created_at',
             'updated_at',
@@ -72,7 +101,7 @@ class FinanceProjectOutputSerializer(serializers.ModelSerializer):
     def to_representation(self, instance):
         data = super().to_representation(instance)
         # UUIDs as strings throughout the API surface.
-        for k in ('id', 'workspace_id', 'created_by'):
+        for k in ('id', 'workspace_id', 'created_by', 'owner_id'):
             v = data.get(k)
             if v is not None:
                 data[k] = str(v)
