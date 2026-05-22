@@ -422,7 +422,7 @@ title 补年份是**数据层临时修复** —— 若该文档被重新上传/�
 
 ## 十四、问答性能优化 —— 对话模型选型
 
-> 状态：**已对比验证，保留 deepseek-reasoner**（2026-05-22）。
+> 状态：**已三方对比验证，定选 deepseek-chat**（2026-05-22）。
 
 ### 14.1 现象
 
@@ -476,6 +476,23 @@ Flash 对长输出问题动辄 40s，reasoner 稳定在 10~20s。两模型对「
 单次采样会严重误导（§14.3 即是教训）。模型选型要连带评估**服务商供给稳定性**，
 不能只看「模型架构」。
 
+### 14.8 deepseek 官方模型对比 → 定选 deepseek-chat
+
+§14.5 换回 reasoner 后，进一步在 deepseek 官方 provider 下新增 `deepseek-chat`
+（DeepSeek-V3 非推理对话版，复用官方凭证），与 reasoner 同条件对比（3 问题）：
+
+| 模型（均 deepseek 官方）| 平均合计 | 平均生成 |
+|---|---|---|
+| deepseek-reasoner（推理）| 8.4s | 5.5s |
+| **deepseek-chat（非推理）** | **4.7s** | 2.5s |
+
+deepseek-chat 快约 45%（省思维链开销），三个问题答案质量均不输 reasoner。
+**app 对话模型最终定为 `deepseek-chat`**（model_id `019e4f3e-1ce5-7f93-b91b-b8847369729e`）。
+
+**三方小结**：siliconCloud Flash 平均 30s（不稳定，6~42s）❌ ＞ deepseek 官方
+reasoner 8.4s ＞ deepseek 官方 **chat 4.7s ✅**。性能根因是「服务商供给稳定性」
+与「是否走思维链」，最终选型 = deepseek 官方 deepseek-chat。
+
 ---
 
 ## 版本记录
@@ -490,3 +507,4 @@ Flash 对长输出问题动辄 40s，reasoner 稳定在 10~20s。两模型对「
 | v0.6 | 2026-05-22 | 新增 §十二：修复 B 档 MMR 误伤多年同类报表 —— `mmr_rerank` 冗余惩罚改为只在同 `document_id` 内生效，跨文档不惩罚。修复后用户原查询 12 项关键财务数字全部进 LLM 上下文 | Finance Workspace 小组 |
 | v0.7 | 2026-05-22 | 新增 §十三：修复财务报表分段丢失年份致 LLM 年份归属错乱 —— 给 18 段财务报表段落 title 补年份前缀（数据层，content/embedding 不动）。修复后三年总资产与年份一一对应 | Finance Workspace 小组 |
 | v0.8 | 2026-05-22 | 新增 §十四：问答性能优化。检索仅占 5%、瓶颈是 LLM。模型对比测试表明 deepseek-reasoner（官方，平均 11.6s）反而比 DeepSeek-V4-Flash（siliconCloud，平均 30s 且波动剧烈 6~42s）更快更稳 —— 保留 reasoner。慢的根因是服务商供给差异而非模型架构；曾基于单次采样误判换 Flash、经对比推翻并换回 | Finance Workspace 小组 |
+| v0.9 | 2026-05-22 | §14.8：在 deepseek 官方下新增 `deepseek-chat` 与 reasoner 对比，chat 平均 4.7s（reasoner 8.4s、Flash 30s），答案质量不输 —— app 对话模型最终定选 `deepseek-chat` | Finance Workspace 小组 |
