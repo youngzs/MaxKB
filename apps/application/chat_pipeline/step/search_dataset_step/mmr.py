@@ -33,6 +33,9 @@ def mmr_rerank(query_embedding, candidates: List[dict], k: int,
     Args:
         query_embedding: 查询向量（list / ndarray / 字符串）。
         candidates: 每项是 dict，**必须含 'embedding' 键**（list/ndarray/str）；
+                    可含 'document_id' —— 冗余惩罚只在同 document 的已选段落间
+                    计算，跨文档不惩罚（避免多年同类报表因结构雷同被误判为冗余
+                    而互相绞杀）；缺失时该候选不参与任何冗余惩罚。
                     其余键原样保留，调用方靠它们关联回检索结果。
         k: 最终保留数量。
         lambda_: 相关性权重 0~1，越大越偏相关、越小越偏多样。默认 0.5 ——
@@ -60,6 +63,11 @@ def mmr_rerank(query_embedding, candidates: List[dict], k: int,
 
     relevance = mat @ q  # shape (N,) —— 每个候选与查询的余弦相似度
 
+    # 每个候选的 document_id —— 冗余惩罚只在同文档内生效。跨文档的相似段落
+    # （如三年各自独立成文档的利润表）不互相惩罚，否则会被当冗余绞杀，
+    # 而多年同类报表恰恰是「多年对比」场景需要全部召回的。
+    doc_ids = [c.get('document_id') for c in candidates]
+
     selected: List[int] = []
     remaining: List[int] = list(range(len(candidates)))
 
@@ -68,11 +76,16 @@ def mmr_rerank(query_embedding, candidates: List[dict], k: int,
             # 第一个：纯取相关性最高 —— 保证最相关结果不被多样性惩罚掉
             pick = max(remaining, key=lambda i: relevance[i])
         else:
-            sel = mat[selected]  # (S, D)
             best_pick, best_mmr = remaining[0], -1e18
             for i in remaining:
-                # redundancy = 与已选集合里最像的那个的相似度
-                redundancy = float(np.max(sel @ mat[i]))
+                # redundancy = 与「同文档」已选段落里最像的那个的相似度；
+                # 没有同文档已选段落（或 document_id 缺失）则不惩罚。
+                same_doc = [s for s in selected
+                            if doc_ids[i] is not None and doc_ids[s] == doc_ids[i]]
+                if same_doc:
+                    redundancy = float(np.max(mat[same_doc] @ mat[i]))
+                else:
+                    redundancy = 0.0
                 score = lambda_ * float(relevance[i]) - (1.0 - lambda_) * redundancy
                 if score > best_mmr:
                     best_mmr, best_pick = score, i

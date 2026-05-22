@@ -112,14 +112,18 @@ def mmr_filter(candidate_list, query_embedding, k: int):
     try:
         para_ids = [str(c.get('paragraph_id')) for c in candidate_list]
         emb_map = {}
+        # 一并补取 document_id —— MMR 的冗余惩罚只在同文档内生效（见 mmr_rerank），
+        # Embedding 表本就有 document 外键，零额外查询。
         for row in (QuerySet(Embedding)
                     .filter(paragraph_id__in=para_ids)
-                    .values('paragraph_id', 'embedding')):
+                    .values('paragraph_id', 'embedding', 'document_id')):
             pid = str(row.get('paragraph_id'))
             # 一个段落可能有多条 embedding（分块）—— 取第一条作代表即可
             if pid not in emb_map and row.get('embedding') is not None:
-                emb_map[pid] = row.get('embedding')
-        enriched = [{'_row': c, 'embedding': emb_map[str(c.get('paragraph_id'))]}
+                emb_map[pid] = (row.get('embedding'), row.get('document_id'))
+        enriched = [{'_row': c,
+                     'embedding': emb_map[str(c.get('paragraph_id'))][0],
+                     'document_id': emb_map[str(c.get('paragraph_id'))][1]}
                     for c in candidate_list
                     if str(c.get('paragraph_id')) in emb_map]
         if len(enriched) <= k:
