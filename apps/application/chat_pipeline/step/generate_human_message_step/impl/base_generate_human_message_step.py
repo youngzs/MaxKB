@@ -59,6 +59,11 @@ class BaseGenerateHumanMessageStep(IGenerateHumanMessageStep):
                 return HumanMessage(content=prompt.replace('{data}', "").replace('{question}', problem))
         temp_data = ""
         data_list = []
+        # 按综合得分降序排序后再拼接：命中 max_paragraph_char_number 上限触发截断时，
+        # 被丢弃的是相关性最低的段落，而非数据库返回顺序里靠后的段落。
+        # 检索/MMR/查询拆解已算出相关性，但 list_paragraph 按库表顺序返回、顺序信息丢失，
+        # 此处依 comprehensive_score 重排恢复，确保最相关段落优先进入 LLM 上下文窗口。
+        paragraph_list = sorted(paragraph_list, key=lambda p: (p.comprehensive_score or 0), reverse=True)
         for p in paragraph_list:
             content = f"{p.title}:{p.content}"
             temp_data += content
