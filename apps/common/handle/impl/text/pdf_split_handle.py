@@ -102,6 +102,56 @@ def _split_text_preserving_md_tables(text: str, split_model: 'SplitModel') -> li
 
 # 当 pypdf 从一页抽到的文字短于该阈值时，认为是扫描页，尝试 OCR fallback
 _OCR_PAGE_TEXT_THRESHOLD = 10
+# 乱码检测：CID 字体没有 ToUnicode CMap 时，pypdf 抽出来的字符全部落在
+# Unicode Private Use Area (U+E000–U+F8FF) 或 replacement char (U+FFFD)。
+# 这类页面字符数往往充足（几千字），但内容完全不可读。判定阈值：PUA + FFFD 占比
+# 超过 _OCR_GARBLED_RATIO 就视为乱码、触发 OCR fallback。
+_OCR_GARBLED_RATIO = float(os.environ.get('MAXKB_PDF_GARBLED_RATIO', '0.30'))
+# 乱码检测的另一条 signal：正常文本（CJK / 拉丁字母 / 数字）占比低于这个阈值，
+# 即使没有 PUA 字符也可能是乱码（比如全是奇怪符号）。
+_OCR_NORMAL_RATIO = float(os.environ.get('MAXKB_PDF_NORMAL_RATIO', '0.30'))
+
+
+def _is_garbled_text(text: str) -> bool:
+    """判断一段 PDF 抽出的文本是不是乱码。
+
+    background：审计报告 / 财务报表 PDF 经常嵌入 CID 字体但不带 ToUnicode 表
+    （字体引擎用 glyph id 直接渲染），pypdf 拿不到字符 → Unicode 映射，
+    把 glyph 当 PUA 字符吐出。表现：页面里几千字符，全是 □ □ □ □ ……
+
+    历史上 _try_ocr_empty_pages 只看"字符总数 < 10"，对这种情况完全无能为力 ——
+    本函数补充判断：字符数足够多但 PUA 占比过高 / 正常字符占比过低，
+    也按"扫描页"对待，让上层走 OCR fallback（TextIn / vision_llm）。
+    """
+    if not text or len(text) < 50:
+        return False
+    bad = 0
+    good = 0
+    for c in text:
+        cp = ord(c)
+        if 0xe000 <= cp <= 0xf8ff or cp == 0xfffd:
+            bad += 1
+        elif (
+            0x4e00 <= cp <= 0x9fff       # CJK Unified Ideographs
+            or 0x3400 <= cp <= 0x4dbf    # CJK Extension A
+            or 0x3000 <= cp <= 0x303f    # CJK Symbols & Punctuation
+            or 0xff00 <= cp <= 0xffef    # Halfwidth & Fullwidth Forms
+            or 0x0030 <= cp <= 0x0039    # ASCII digits
+            or 0x0041 <= cp <= 0x005a    # ASCII upper
+            or 0x0061 <= cp <= 0x007a    # ASCII lower
+        ):
+            good += 1
+    total = len(text)
+    if bad / total > _OCR_GARBLED_RATIO:
+        return True
+    if good / total < _OCR_NORMAL_RATIO:
+        return True
+    return False
+
+
+def _is_garbled_page(lines) -> bool:
+    """`_is_garbled_text` 的 page_lines list 适配版（被 _try_ocr_empty_pages 用）。"""
+    return _is_garbled_text(''.join(t for t, _ in lines))
 # OCR 时 PDF 页面渲染 DPI；越高越清晰但越慢/越占内存。
 # 300 DPI 比 200 明显更锐利；配合 image_preprocess 的灰度化，字节体积仍可控。
 _OCR_PAGE_DPI = 300
@@ -291,10 +341,23 @@ class PdfSplitHandle(BaseSplitHandle):
           避免多线程直接写同一个 list（虽然写不同下标在 CPython 是安全的，
           collect-then-apply 更稳妥也更易读）
         """
-        empty_indices = [
-            i for i, lines in enumerate(page_lines)
-            if sum(len(t) for t, _ in lines) < _OCR_PAGE_TEXT_THRESHOLD
-        ]
+        # 两条触发 OCR 的路径：
+        #   1) 字符总数 < _OCR_PAGE_TEXT_THRESHOLD —— 扫描页（图片型 PDF）
+        #   2) 字符够多但 _is_garbled_page 判定为乱码 —— CID 字体无 ToUnicode 表
+        empty_indices = []
+        garbled_indices = []
+        for i, lines in enumerate(page_lines):
+            text_len = sum(len(t) for t, _ in lines)
+            if text_len < _OCR_PAGE_TEXT_THRESHOLD:
+                empty_indices.append(i)
+            elif _is_garbled_page(lines):
+                garbled_indices.append(i)
+        if garbled_indices:
+            maxkb_logger.info(
+                f"PDF: {len(garbled_indices)} page(s) detected as garbled "
+                f"(CID font without ToUnicode); routing to OCR. pages={garbled_indices}"
+            )
+        empty_indices = empty_indices + garbled_indices
         if not empty_indices:
             return  # 全文本 PDF 走这条快路
 
@@ -418,6 +481,17 @@ class PdfSplitHandle(BaseSplitHandle):
             maxkb_logger.debug(
                 f"File: {file.name}, Page: {page_num + 1}, Time: {elapsed_time:.3f}s"
             )
+
+        # enable_ocr=False（sync split 路径默认走这条）时：如果整体抽出来都是
+        # CID 乱码，清空 content。返回 0 段落 → 预览界面跟"扫描件"一样空，
+        # 用户点"开始导入"后 celery 异步 OCR 任务会用 TextIn / vision 重抽。
+        # 不能在 sync 路径直接跑 OCR：vision LLM 一页要十几秒，会卡死 split 请求。
+        if not enable_ocr and content and _is_garbled_text(content):
+            maxkb_logger.info(
+                f"PDF content from pypdf is garbled ({len(content)} chars, mostly PUA); "
+                f"clearing so async OCR task can retake. file={file.name}"
+            )
+            return ""
 
         return content
 
@@ -574,6 +648,15 @@ class PdfSplitHandle(BaseSplitHandle):
                 f"falling back to full-page extraction so OCR can run."
             )
             return None
+        # CID 字体无 ToUnicode 表的乱码 PDF：每章都有几千字符（不会触发上面的
+        # 字符数阈值），但全是 PUA 字符。把所有章节合起来判一次乱码，命中就降级。
+        all_text = ''.join(c.get('content', '') for c in chapters)
+        if _is_garbled_text(all_text):
+            maxkb_logger.info(
+                f"PDF TOC text detected as garbled (CID font without ToUnicode); "
+                f"falling back to full-page extraction so OCR can run."
+            )
+            return None
         return chapters
 
     @staticmethod
@@ -701,6 +784,15 @@ class PdfSplitHandle(BaseSplitHandle):
                 f"falling back to full-page extraction so OCR can run."
             )
             return None
+        # 同 handle_toc 的乱码判断：内部链接 PDF 也可能 CID 字体无 ToUnicode 表。
+        if chapters:
+            all_text = ''.join(c.get('content', '') for c in chapters)
+            if _is_garbled_text(all_text):
+                maxkb_logger.info(
+                    "PDF internal-links text detected as garbled "
+                    "(CID font without ToUnicode); falling back to full-page extraction so OCR can run."
+                )
+                return None
         return chapters
 
     @staticmethod

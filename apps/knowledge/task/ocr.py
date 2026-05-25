@@ -84,24 +84,30 @@ def _get_source_pdf_bytes(document) -> bytes | None:
 
 
 def _document_needs_ocr(document) -> bool:
-    """Heuristic: if every existing paragraph is empty or only contains
-    dangling image placeholders, the document was a scan that pypdf
-    couldn't read — worth trying OCR. Saves a render+LLM round-trip
-    for ordinary text PDFs."""
+    """Heuristic: if every existing paragraph is empty, only contains dangling
+    image placeholders, or is full of unmapped CID glyphs (garbled PUA chars),
+    the document needs OCR. Saves a render+LLM round-trip for ordinary text
+    PDFs that already have good content."""
+    from common.handle.impl.text.pdf_split_handle import _is_garbled_text
     from knowledge.models import Paragraph
 
     paras = list(Paragraph.objects.filter(document_id=document.id).values_list('content', flat=True))
     if not paras:
         return True
+    has_real_text = False
     for content in paras:
         s = (content or '').strip()
         if not s:
             continue
         if _DANGLING_IMG_RE.match(s):
             continue
-        # Found a paragraph with real text — skip OCR.
-        return False
-    return True
+        if _is_garbled_text(s):
+            # 段落里全是 CID 乱码 —— 走过 sync split 但乱码检测来不及拦时落库的
+            # 残留。或者历史版本（此修复前）入库的乱码文档。整篇视为"需要 OCR"。
+            continue
+        has_real_text = True
+        break
+    return not has_real_text
 
 
 def _replace_paragraphs(document, content_list):
