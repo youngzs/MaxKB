@@ -297,6 +297,27 @@ def ocr_pdf_document(document_id):
             maxkb_logger.warning(
                 f"OCR task: post-embedding enqueue failed for {document_id}: {e}"
             )
+
+        # Phase 3 时序补丁:auto_extract_financial 在 batch_save 末尾跑过一次,
+        # 但当时扫描件 / 乱码 PDF 段落是空的(OCR 还没跑) → 0 statement。OCR 完成、
+        # 段落填充后再跑一次 —— 现在能抽到 markdown 表格了。
+        # 不带 doc_type=财务报表/审计报告 标签的文档,内部 _has_financial_report_tag
+        # 会跳过,零额外开销。
+        try:
+            from knowledge.models import Document as _Doc
+            from knowledge.services.financial_auto_extract import auto_extract_financial
+            doc = QuerySet(_Doc).filter(id=document_id).first()
+            if doc is not None:
+                stmt_n = auto_extract_financial(doc.knowledge_id, [doc])
+                if stmt_n:
+                    maxkb_logger.info(
+                        f"OCR task: post-OCR financial extraction for {document_id} "
+                        f"yielded {stmt_n} statement(s)."
+                    )
+        except Exception as e:
+            maxkb_logger.warning(
+                f"OCR task: post-OCR financial extraction failed for {document_id}: {e}"
+            )
     except Exception as e:
         maxkb_logger.error(
             f"OCR task: unexpected failure on {document_id}: {e}\n{traceback.format_exc()}"
