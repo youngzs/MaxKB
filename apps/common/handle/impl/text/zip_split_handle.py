@@ -230,6 +230,8 @@ class ZipSplitHandle(BaseSplitHandle):
         with zipfile.ZipFile(bytes_io, 'r') as zip_ref:
             # 获取压缩包中的文件名列表
             files = zip_ref.namelist()
+            # 给每个 zip entry 单独存的 File row,稍后一次性 batch save
+            source_files_to_save = []
             # 读取压缩包中的文件内容
             for entry_name in files:
                 if entry_name.endswith('/') or entry_name.startswith('__MACOSX'):
@@ -241,6 +243,22 @@ class ZipSplitHandle(BaseSplitHandle):
                     basename = real_name.replace('\\', '/').rsplit('/', 1)[-1]
                     with zip_ref.open(entry_name) as zf:
                         raw_bytes = zf.read()
+
+                    # 关键:给每个 zip entry 一个独立的 File row,把"原始字节"持久化。
+                    # 历史版本所有 zip 子文档共用 zip 自身的 source_file_id —— 异步
+                    # OCR 任务 enqueue_ocr_if_pdf 检查"file_name.endswith('.pdf')"
+                    # 永远 False(zip 后缀),OCR 永远不跑,扫描版 PDF 全部 0 字符。
+                    # 给每个 entry 独立 File row 后:
+                    #   1. enqueue_ocr_if_pdf 能识别 .pdf 后缀 → OCR 任务入队
+                    #   2. _get_source_pdf_bytes 能拿到这个 PDF 的真实字节
+                    #   3. "下载源文件" 也得到正确的单文件而不是整 zip
+                    entry_file_id = uuid.uuid7()
+                    source_files_to_save.append(File(
+                        id=entry_file_id,
+                        file_name=basename,
+                        meta={'debug': False, 'content': raw_bytes},
+                    ))
+
                     wrapped = _ZipEntryFile(raw_bytes, basename)
                     value = file_to_paragraph(wrapped, pattern_list, with_filter, limit, save_image)
                     # 给每个 result item 注入 path_segments meta —— Phase 2 自动打标会用
@@ -248,9 +266,11 @@ class ZipSplitHandle(BaseSplitHandle):
                     if isinstance(value, list):
                         for item in value:
                             _inject_zip_meta(item, real_name, segments)
+                            item['source_file_id'] = str(entry_file_id)
                         result.extend(value)
                     else:
                         _inject_zip_meta(value, real_name, segments)
+                        value['source_file_id'] = str(entry_file_id)
                         result.append(value)
                 except Exception as e:
                     # 历史版本是 `except Exception: pass` —— 任何条目失败都静默丢掉，
@@ -261,6 +281,17 @@ class ZipSplitHandle(BaseSplitHandle):
                         f"ZipSplitHandle: skipping entry {entry_name!r}: {e!r}"
                     )
                     continue
+            # batch 存所有 zip entry 的 File row —— 复用 save_image callback
+            # (它的实现是通用的"按 meta['content'] 存 File",名字仅是历史命名)。
+            # 任何存储失败都记 warning,不阻塞主流程;只是丢失了 source_file_id 链
+            # → enqueue_ocr_if_pdf 退化到旧行为(zip 后缀检查失败,OCR 不跑)。
+            if source_files_to_save:
+                try:
+                    save_image(source_files_to_save)
+                except Exception as e:
+                    maxkb_logger.warning(
+                        f"ZipSplitHandle: failed to save per-entry source files: {e!r}"
+                    )
             image_list = get_image_list(result, files)
             result = filter_image_file(result, image_list)
             image_mode_list = []

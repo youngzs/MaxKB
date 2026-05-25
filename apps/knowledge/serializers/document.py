@@ -1140,21 +1140,24 @@ class DocumentSerializers(serializers.Serializer):
             file.seek(0)
 
             get_buffer = FileBufferHandle().get_buffer
+            # setdefault 而非赋值:某些 handler(ZipSplitHandle)给每个子文件存
+            # 独立 File row 并预设了 source_file_id,这里不能覆盖。常规 handler
+            # 不设 source_file_id,setdefault 行为等同于原来的 = file_id。
             for split_handle in split_handles:
                 if split_handle.support(file, get_buffer):
                     result = split_handle.handle(file, pattern_list, with_filter, limit, get_buffer, self.save_image)
                     if isinstance(result, list):
                         for item in result:
-                            item['source_file_id'] = file_id
+                            item.setdefault('source_file_id', file_id)
                         return result
-                    result['source_file_id'] = file_id
+                    result.setdefault('source_file_id', file_id)
                     return [result]
             result = default_split_handle.handle(file, pattern_list, with_filter, limit, get_buffer, self.save_image)
             if isinstance(result, list):
                 for item in result:
-                    item['source_file_id'] = file_id
+                    item.setdefault('source_file_id', file_id)
                 return result
-            result['source_file_id'] = file_id
+            result.setdefault('source_file_id', file_id)
             return [result]
 
     class SplitPattern(serializers.Serializer):
