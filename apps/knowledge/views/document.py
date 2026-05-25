@@ -197,6 +197,10 @@ class DocumentView(APIView):
                 split_data.__setitem__('limit', request_data.get('limit'))
             if 'with_filter' in request.data:
                 split_data.__setitem__('with_filter', request_data.get('with_filter'))
+            # 与 file[] 等长的可选相对路径数组（webkitdirectory / 前端解压 zip 时填充）。
+            # 旧的"单文件上传"调用方不传也兼容。
+            if 'relative_paths' in request_data:
+                split_data['relative_paths'] = request_data.getlist('relative_paths')
             return result.success(DocumentSerializers.Split(data={
                 'workspace_id': workspace_id,
                 'knowledge_id': knowledge_id,

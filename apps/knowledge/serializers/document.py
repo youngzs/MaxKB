@@ -112,6 +112,9 @@ class DocumentInstanceSerializer(serializers.Serializer):
                                  source=_('document name'))
     paragraphs = ParagraphInstanceSerializer(required=False, many=True, allow_null=True)
     source_file_id = serializers.UUIDField(required=False, allow_null=True, label=_('source file id'))
+    # 元数据：包含上传时的相对路径分段（用于自动打标 path / role / doc_type）
+    # 以及其他自由字段。结构例：{'path_segments': ['借款人资料','...','征信报告.pdf']}
+    meta = serializers.DictField(required=False, allow_null=True)
 
 
 class CancelInstanceSerializer(serializers.Serializer):
@@ -173,6 +176,14 @@ class DocumentSplitRequest(serializers.Serializer):
         label=_('patterns')
     )
     with_filter = serializers.BooleanField(required=False, label=_('Auto Clean'))
+    # 可选：与 file[] 等长，第 i 个元素是第 i 个文件的相对路径（webkitdirectory 来的
+    # File.webkitRelativePath，或前端 jszip 解压 zip 后给出的相对路径）。
+    # 用于保留目录层级 → 后续自动打标 path / role。空字符串 / null 表示该文件没有路径。
+    relative_paths = serializers.ListField(
+        required=False, allow_empty=True,
+        child=serializers.CharField(required=False, allow_blank=True, allow_null=True),
+        label=_('relative paths'),
+    )
 
 
 class DocumentWebInstanceSerializer(serializers.Serializer):
@@ -1077,16 +1088,29 @@ class DocumentSerializers(serializers.Serializer):
             DocumentSplitRequest(data=instance).is_valid(raise_exception=True)
 
             file_list = instance.get("file")
-            return reduce(
-                lambda x, y: [*x, *y],
-                [self.file_to_paragraph(
+            # webkitdirectory / 前端 jszip 解压时，每个 file 带一个 relative_path。
+            # 等长对齐；任何缺位都按"无路径"处理（保留旧的"单文件上传"行为）。
+            relative_paths = instance.get("relative_paths") or []
+            results = []
+            for idx, f in enumerate(file_list):
+                rel = relative_paths[idx] if idx < len(relative_paths) else ''
+                parsed = self.file_to_paragraph(
                     f,
                     instance.get("patterns", None),
                     instance.get("with_filter", None),
-                    instance.get("limit", 4096)
-                ) for f in file_list],
-                []
-            )
+                    instance.get("limit", 4096),
+                )
+                # 把相对路径塞进每条结果的 meta —— batch_save 会带着这份 meta
+                # 落进 Document.meta，自动打标 helper 会从 path_segments 读路径。
+                if rel:
+                    segs = [s for s in rel.replace('\\', '/').split('/') if s]
+                    for item in parsed:
+                        meta = dict(item.get('meta') or {})
+                        meta['relative_path'] = rel
+                        meta['path_segments'] = segs
+                        item['meta'] = meta
+                results.extend(parsed)
+            return results
 
         def save_image(self, image_list):
             if image_list is not None and len(image_list) > 0:
@@ -1229,6 +1253,14 @@ class DocumentSerializers(serializers.Serializer):
             )
             # 插入文档
             QuerySet(Document).bulk_create(document_model_list) if len(document_model_list) > 0 else None
+            # 根据 meta.path_segments 自动写 Tag / DocumentTag（webkitdirectory / zip 上传时
+            # 由 Split 阶段写入 meta）。失败不阻塞主流程。
+            if document_model_list:
+                try:
+                    from knowledge.serializers.document_auto_tag import auto_tag_documents
+                    auto_tag_documents(knowledge_id, document_model_list)
+                except Exception:
+                    pass
             # 批量插入段落
             if len(paragraph_model_list) > 0:
                 for document in document_model_list:
@@ -1243,6 +1275,14 @@ class DocumentSerializers(serializers.Serializer):
             bulk_create_in_batches(Problem, problem_model_list, batch_size=1000)
             # 批量插入关联问题
             bulk_create_in_batches(ProblemParagraphMapping, problem_paragraph_mapping_list, batch_size=1000)
+            # Phase 3：对带 doc_type=财务报表 标签的文档跑结构化抽取，落 FinancialStatement /
+            # FinancialFact。失败不阻塞主流程。
+            if document_model_list:
+                try:
+                    from knowledge.services.financial_auto_extract import auto_extract_financial
+                    auto_extract_financial(knowledge_id, document_model_list)
+                except Exception:
+                    pass
             # 查询文档
             query_set = QuerySet(model=Document)
             if len(document_model_list) == 0:

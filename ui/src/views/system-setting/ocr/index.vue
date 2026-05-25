@@ -27,8 +27,9 @@
           >
             <el-form-item label="OCR 模式" prop="mode">
               <el-radio-group v-model="form.mode">
-                <el-radio value="vision_model">视觉大模型（推荐）</el-radio>
+                <el-radio value="vision_model">视觉大模型</el-radio>
                 <el-radio value="local">本地 OCR（rapidocr）</el-radio>
+                <el-radio value="textin">TextIn xparse（推荐 / 表格保真）</el-radio>
               </el-radio-group>
             </el-form-item>
 
@@ -69,6 +70,42 @@
                   show-word-limit
                 />
                 <el-text type="info" size="small">留空则使用内置默认提示词，引导模型「忠实输出」而非「总结」。</el-text>
+              </el-form-item>
+            </template>
+
+            <!-- TextIn xparse 模式 -->
+            <template v-if="form.mode === 'textin'">
+              <el-alert
+                class="mb-16"
+                type="info"
+                :closable="false"
+                show-icon
+                title="TextIn xparse 是合合信息的商用文档解析 API"
+                description="按页计费，对扫描版 PDF / 财务报表 / 含表格的文档保真度显著高于视觉大模型。表格自动输出为 Markdown，标题层级保留。凭据从 TextIn 控制台获取。"
+              />
+              <el-form-item label="App ID" prop="textin_app_id">
+                <el-input
+                  v-model="form.textin_app_id"
+                  placeholder="x-ti-app-id"
+                  maxlength="128"
+                  show-password
+                />
+              </el-form-item>
+              <el-form-item label="Secret Code" prop="textin_secret_code">
+                <el-input
+                  v-model="form.textin_secret_code"
+                  placeholder="x-ti-secret-code"
+                  maxlength="256"
+                  show-password
+                />
+              </el-form-item>
+              <el-form-item label="Endpoint（可选）" prop="textin_endpoint">
+                <el-input
+                  v-model="form.textin_endpoint"
+                  placeholder="默认 https://api.textin.com/api/v1/xparse/parse/sync"
+                  maxlength="512"
+                />
+                <el-text type="info" size="small">留空走默认同步端点；私有部署 / 自托管 TextIn 时填写专属地址。</el-text>
               </el-form-item>
             </template>
 
@@ -131,6 +168,9 @@ const form = ref<any>({
   workspace_id: '',
   language: 'ch',
   prompt: '',
+  textin_app_id: '',
+  textin_secret_code: '',
+  textin_endpoint: '',
 })
 
 const formRef = ref<FormInstance>()
@@ -150,6 +190,30 @@ const rules = reactive<FormRules<any>>({
         }
       },
       trigger: 'change',
+    },
+  ],
+  textin_app_id: [
+    {
+      validator: (_rule: any, value: string, cb: any) => {
+        if (form.value.mode === 'textin' && !value) {
+          cb(new Error('请填写 TextIn App ID'))
+        } else {
+          cb()
+        }
+      },
+      trigger: 'blur',
+    },
+  ],
+  textin_secret_code: [
+    {
+      validator: (_rule: any, value: string, cb: any) => {
+        if (form.value.mode === 'textin' && !value) {
+          cb(new Error('请填写 TextIn Secret Code'))
+        } else {
+          cb()
+        }
+      },
+      trigger: 'blur',
     },
   ],
 })
@@ -186,6 +250,9 @@ async function loadSetting() {
         workspace_id: res.data.workspace_id || '',
         language: res.data.language || 'ch',
         prompt: res.data.prompt || '',
+        textin_app_id: res.data.textin_app_id || '',
+        textin_secret_code: res.data.textin_secret_code || '',
+        textin_endpoint: res.data.textin_endpoint || '',
       }
     }
   } catch (e) {

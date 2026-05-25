@@ -33,7 +33,8 @@ class OcrProvider(ABC):
 # OCR 模式常量（同步前端 enum）
 MODE_VISION_LLM = 'vision_model'
 MODE_LOCAL = 'local'
-ALL_MODES = (MODE_VISION_LLM, MODE_LOCAL)
+MODE_TEXTIN = 'textin'
+ALL_MODES = (MODE_VISION_LLM, MODE_LOCAL, MODE_TEXTIN)
 
 
 # OCR 提示词：让视觉模型尽量"忠实抄写"而非"总结"
@@ -82,6 +83,21 @@ def get_ocr_provider(config: Optional[dict] = None) -> OcrProvider:
         from common.handle.impl.ocr.local_provider import LocalOcrProvider
         return LocalOcrProvider(
             language=config.get('language') or 'ch',
+        )
+
+    if mode == MODE_TEXTIN:
+        app_id = config.get('textin_app_id') or ''
+        secret_code = config.get('textin_secret_code') or ''
+        endpoint = config.get('textin_endpoint') or ''
+        if not app_id or not secret_code:
+            raise OcrConfigError(
+                "OCR 配置不完整：选择了 TextIn 但未填 app_id / secret_code"
+            )
+        from common.handle.impl.ocr.textin_provider import TextinOcrProvider
+        return TextinOcrProvider(
+            app_id=app_id,
+            secret_code=secret_code,
+            endpoint=endpoint or None,
         )
 
     # 不会走到这里（已经被 ALL_MODES 校验拦住），保险起见

@@ -114,6 +114,7 @@ export const applicationTemplate: any = {
               search_mode: 'embedding',
               max_paragraph_char_number: 5000,
             },
+            tag_filter: [],
             question_reference_address: ['start-node', 'question'],
             all_knowledge_id_list: [],
             knowledge_list: [],

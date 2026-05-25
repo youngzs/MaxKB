@@ -20,7 +20,7 @@ from common.database_model_manage.database_model_manage import DatabaseModelMana
 from common.db.search import native_search
 from common.utils.common import get_file_content
 from common.utils.shared_resource_auth import filter_authorized_ids
-from knowledge.models import Document, Paragraph, Knowledge, SearchMode
+from knowledge.models import Document, DocumentTag, Knowledge, Paragraph, SearchMode, Tag
 from maxkb.conf import PROJECT_DIR
 from models_provider.tools import get_model_instance_by_model_workspace_id
 
@@ -77,6 +77,7 @@ class BaseSearchKnowledgeNode(ISearchKnowledgeStepNode):
                 search_scope_source,
                 search_scope_reference,
                 exclude_paragraph_id_list=None,
+                tag_filter=None,
                 **kwargs) -> NodeResult:
         self.context['question'] = question
         self.context['show_knowledge'] = show_knowledge
@@ -92,6 +93,20 @@ class BaseSearchKnowledgeNode(ISearchKnowledgeStepNode):
                 ).values_list(
                     'knowledge_id', flat=True
                 ).distinct()]
+
+        # 标签过滤：把 tag_filter 折成 document_id 集合，与上面可能已经存在的
+        # document_id_list 做交集；任何一个 {key,value} 没有对应的标签 →
+        # 不可能命中文档，直接走 get_none_result。
+        if tag_filter:
+            tag_doc_ids = self._tag_filter_to_document_ids(knowledge_id_list, tag_filter)
+            if tag_doc_ids is None:
+                return get_none_result(question)
+            if document_id_list:
+                document_id_list = [d for d in document_id_list if str(d) in tag_doc_ids]
+                if not document_id_list:
+                    return get_none_result(question)
+            else:
+                document_id_list = list(tag_doc_ids)
 
         get_knowledge_list_of_authorized = DatabaseModelManage.get_model('get_knowledge_list_of_authorized')
         chat_user_type = self.workflow_manage.get_body().get('chat_user_type')
@@ -134,6 +149,46 @@ class BaseSearchKnowledgeNode(ISearchKnowledgeStepNode):
                            'question': question},
 
                           {})
+
+    @staticmethod
+    def _tag_filter_to_document_ids(knowledge_id_list, tag_filter):
+        """把 tag_filter 翻译成"满足全部条件的 document_id 集合"。
+
+        语义：
+          - 同一 key 出现多次 → 这些 value 之间是 OR（"role=借款人 或 反担保人"）
+          - 不同 key → AND（"role=借款人 AND doc_type=征信报告"）
+        返回 None 表示"过滤条件根本不存在对应标签"，调用方应直接 short-circuit。
+        返回 set[str] 表示交集后的 document_id 集合（可能为空 set —— 也算 short-circuit）。
+        """
+        # 按 key 分组
+        key_to_values: dict[str, list] = {}
+        for item in tag_filter or []:
+            if not isinstance(item, dict):
+                continue
+            k = (item.get('key') or '').strip()
+            v = (item.get('value') or '').strip()
+            if not k or not v:
+                continue
+            key_to_values.setdefault(k, []).append(v)
+        if not key_to_values:
+            return None
+
+        intersected: set | None = None
+        for key, values in key_to_values.items():
+            tag_ids = list(QuerySet(Tag).filter(
+                knowledge_id__in=knowledge_id_list, key=key, value__in=values
+            ).values_list('id', flat=True))
+            if not tag_ids:
+                return None
+            doc_ids = set(str(d) for d in QuerySet(DocumentTag).filter(
+                tag_id__in=tag_ids
+            ).values_list('document_id', flat=True))
+            if not doc_ids:
+                return set()
+            intersected = doc_ids if intersected is None else (intersected & doc_ids)
+            if not intersected:
+                return set()
+        return intersected or set()
 
     @staticmethod
     def reset_paragraph(paragraph: Dict, embedding_list: List):

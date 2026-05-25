@@ -54,6 +54,14 @@ class SearchDatasetStepNodeSerializer(serializers.Serializer):
     search_scope_reference = serializers.ListField(
         required=False, label=_("search scope variable"), default=list
     )
+    # 标签过滤：多个 {key, value} 之间是 AND（同一 key 多 value 是 OR 再 AND 进总过滤）。
+    # 例：[{'key':'role','value':'借款人'},{'key':'doc_type','value':'征信报告'}]
+    # = "借款人目录下的征信报告"。
+    # 为空 / 不传时不应用任何标签过滤，行为与原来一致。
+    tag_filter = serializers.ListField(
+        required=False, label=_("tag filter"), default=list,
+        child=serializers.DictField(required=False),
+    )
 
     def is_valid(self, *, raise_exception=False):
         super().is_valid(raise_exception=True)

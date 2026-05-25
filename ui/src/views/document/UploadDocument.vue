@@ -165,6 +165,9 @@ function submit() {
       name: item.name,
       paragraphs: item.content,
       source_file_id: item.source_file_id,
+      // meta 由 split 阶段写入（含 relative_path / path_segments），透传到 batch_save。
+      // 后端 batch_save 会据此自动写 Tag / DocumentTag。
+      ...(item.meta ? { meta: item.meta } : {}),
     })
   })
 

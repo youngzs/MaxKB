@@ -205,6 +205,52 @@
           </template>
           <el-switch size="small" v-model="form_data.show_knowledge"/>
         </el-form-item>
+
+        <!-- 标签过滤（可选）：仅召回带这些标签的文档；同 key 多 value=OR，不同 key=AND。
+             典型用法：上传时按目录区分了 role=借款人 / 反担保人 + doc_type=征信报告 等。 -->
+        <el-form-item>
+          <template #label>
+            <div class="flex-between">
+              <span>标签过滤（可选）</span>
+              <el-button link type="primary" @click="addTagFilter">
+                + 增加
+              </el-button>
+            </div>
+          </template>
+          <div class="w-full" v-if="!form_data.tag_filter || form_data.tag_filter.length === 0">
+            <el-text type="info" size="small">
+              不设置=不过滤；设置后只召回带匹配标签的文档（同 key 多 value=任一命中，不同 key=都要命中）。
+              常见 key：role / doc_type / path。
+            </el-text>
+          </div>
+          <div
+            v-for="(it, idx) in form_data.tag_filter || []"
+            :key="idx"
+            class="flex align-center w-full mb-4"
+          >
+            <el-input
+              v-model="it.key"
+              size="small"
+              placeholder="key 如 role"
+              style="width: 35%"
+            />
+            <span class="mx-4">=</span>
+            <el-input
+              v-model="it.value"
+              size="small"
+              placeholder="value 如 借款人"
+              style="width: 45%"
+            />
+            <el-button
+              link
+              type="danger"
+              class="ml-4"
+              @click="removeTagFilter(idx)"
+            >
+              <AppIcon iconName="app-delete"/>
+            </el-button>
+          </div>
+        </el-form-item>
       </el-form>
     </el-card>
     <ParamSettingDialog ref="ParamSettingDialogRef" @refresh="refreshParam"/>
@@ -245,6 +291,7 @@ const form = {
   search_scope_type: 'custom',
   search_scope_source: 'knowledge',
   search_scope_reference: [],
+  tag_filter: [] as Array<{ key: string; value: string }>,
 }
 
 const form_data = computed({
@@ -312,6 +359,15 @@ function openknowledgeDialog() {
   }
 }
 
+function addTagFilter() {
+  if (!form_data.value.tag_filter) form_data.value.tag_filter = []
+  form_data.value.tag_filter.push({ key: '', value: '' })
+}
+
+function removeTagFilter(idx: number) {
+  form_data.value.tag_filter.splice(idx, 1)
+}
+
 const validate = () => {
   return Promise.all([
     nodeCascaderRef.value.validate(),
@@ -327,6 +383,10 @@ onMounted(() => {
   form_data.value.show_knowledge = form_data.value.show_knowledge
     ? form_data.value.show_knowledge
     : false
+  // 兼容：旧节点没有 tag_filter 字段
+  if (!Array.isArray(form_data.value.tag_filter)) {
+    form_data.value.tag_filter = []
+  }
   form_data.value.search_scope_type = form_data.value.search_scope_type
     ? form_data.value.search_scope_type
     : 'custom'

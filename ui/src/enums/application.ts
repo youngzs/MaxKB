@@ -47,6 +47,7 @@ export enum WorkflowType {
   ToolBaseNode = 'tool-base-node',
   DocxRenderNode = 'docx-render-node',
   ZipPackNode = 'zip-pack-node',
+  FinancialCalcNode = 'financial-calc-node',
 }
 export enum WorkflowKind {
   DataSource = 'data-source',

@@ -11,7 +11,7 @@ from rest_framework import serializers
 from common.exception.app_exception import AppApiException
 from common.handle.impl.ocr.provider import (
     ALL_MODES,
-    MODE_LOCAL,
+    MODE_TEXTIN,
     MODE_VISION_LLM,
     OcrConfigError,
     OcrError,
@@ -27,6 +27,10 @@ DEFAULTS = {
     'workspace_id': '',
     'language': 'ch',  # 仅 local 模式有意义
     'prompt': '',      # 空时 provider 用 DEFAULT_OCR_PROMPT
+    # TextIn 模式参数。凭据只落库不进代码。
+    'textin_app_id': '',
+    'textin_secret_code': '',
+    'textin_endpoint': '',  # 留空走 provider 默认 https://api.textin.com/api/v1/xparse/parse/sync
 }
 
 
@@ -55,11 +59,25 @@ class OcrSettingSerializer(serializers.Serializer):
         # 可选自定义 prompt（视觉模型模式生效）
         prompt = serializers.CharField(required=False, allow_blank=True, max_length=2048,
                                        label=_('OCR Prompt'))
+        # TextIn 模式参数（凭据落库存储）
+        textin_app_id = serializers.CharField(required=False, allow_blank=True, allow_null=True,
+                                              max_length=128, label=_('TextIn App ID'))
+        textin_secret_code = serializers.CharField(required=False, allow_blank=True, allow_null=True,
+                                                   max_length=256, label=_('TextIn Secret Code'))
+        textin_endpoint = serializers.CharField(required=False, allow_blank=True, allow_null=True,
+                                                max_length=512, label=_('TextIn Endpoint'))
 
         def validate(self, attrs):
             if attrs.get('mode') == MODE_VISION_LLM and not attrs.get('model_id'):
                 raise serializers.ValidationError(
                     {'model_id': _('Vision model is required when mode is vision_model')})
+            if attrs.get('mode') == MODE_TEXTIN:
+                if not attrs.get('textin_app_id'):
+                    raise serializers.ValidationError(
+                        {'textin_app_id': _('TextIn app_id is required when mode is textin')})
+                if not attrs.get('textin_secret_code'):
+                    raise serializers.ValidationError(
+                        {'textin_secret_code': _('TextIn secret_code is required when mode is textin')})
             return attrs
 
         def is_valid_config(self):
@@ -94,4 +112,7 @@ class OcrSettingSerializer(serializers.Serializer):
                 'workspace_id': d.get('workspace_id') or '',
                 'language': d.get('language') or 'ch',
                 'prompt': d.get('prompt') or '',
+                'textin_app_id': d.get('textin_app_id') or '',
+                'textin_secret_code': d.get('textin_secret_code') or '',
+                'textin_endpoint': d.get('textin_endpoint') or '',
             }

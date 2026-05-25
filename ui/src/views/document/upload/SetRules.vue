@@ -185,9 +185,14 @@ function changeHandle(val: boolean) {
 function splitDocument() {
   loading.value = true
   const fd = new FormData()
+  // 与 file[] 等长追加 relative_paths[]。webkitdirectory 模式下
+  // file.raw.webkitRelativePath 形如 '借款人资料/盐城市保安服务有限公司/营业执照.pdf'；
+  // 单文件选择模式下 webkitRelativePath 是空字符串 —— 后端也接受空字符串作为"无路径"。
   documentsFiles.value.forEach((item) => {
     if (item?.raw) {
       fd.append('file', item?.raw)
+      const rel = (item.raw as any)?.webkitRelativePath || ''
+      fd.append('relative_paths', rel)
     }
   })
   if (radio.value === '2') {

@@ -472,6 +472,24 @@ export const zipPackNode = {
     },
   },
 }
+export const financialCalcNode = {
+  type: WorkflowType.FinancialCalcNode,
+  text: '财务确定性计算',
+  label: '财务计算',
+  height: 380,
+  properties: {
+    stepName: '财务计算',
+    config: {
+      fields: [
+        { label: '是否命中', value: 'found' },
+        { label: '计算结果', value: 'result' },
+        { label: '来源文档', value: 'sources' },
+        { label: '说明', value: 'message' },
+        { label: '结构化输出', value: 'data' },
+      ],
+    },
+  },
+}
 export const documentSplitNode = {
   type: WorkflowType.DocumentSplitNode,
   text: t('workflow.nodes.documentSplitNode.text'),
@@ -1231,6 +1249,7 @@ export const nodeDict: any = {
   [WorkflowType.ToolStartNode]: toolStartNode,
   [WorkflowType.DocxRenderNode]: docxRenderNode,
   [WorkflowType.ZipPackNode]: zipPackNode,
+  [WorkflowType.FinancialCalcNode]: financialCalcNode,
 }
 
 export function isWorkFlow(type: string | undefined) {
