@@ -21,11 +21,13 @@ from common.handle.base_split_handle import BaseSplitHandle
 from common.handle.impl.text.csv_split_handle import CsvSplitHandle
 from common.handle.impl.text.doc_split_handle import DocSplitHandle
 from common.handle.impl.text.html_split_handle import HTMLSplitHandle
+from common.handle.impl.text.image_ocr_split_handle import ImageOcrSplitHandle
 from common.handle.impl.text.pdf_split_handle import PdfSplitHandle
 from common.handle.impl.text.text_split_handle import TextSplitHandle
 from common.handle.impl.text.xls_split_handle import XlsSplitHandle
 from common.handle.impl.text.xlsx_split_handle import XlsxSplitHandle
 from common.utils.common import parse_md_image
+from common.utils.logger import maxkb_logger
 from knowledge.models import File
 
 
@@ -38,6 +40,72 @@ class FileBufferHandle:
         return self.buffer
 
 
+class _ZipEntryFile:
+    """让 zip 内的条目"看起来像" Django UploadedFile。
+
+    背景：`zip_ref.open()` 返回的 `ZipExtFile` 只有 `.read()`，没有 `.chunks()` /
+    `.size` 等属性。但 `PdfSplitHandle.handle` 用 `file.chunks()` 写临时文件
+    （参见 [pdf_split_handle.py:178](apps/common/handle/impl/text/pdf_split_handle.py:178)），
+    `ImageOcrSplitHandle.support` 用 `.name.lower()` 等等。zip 里的所有
+    PDF / 图片如果直接喂 `ZipExtFile` 都会因为 `AttributeError: 'ZipExtFile'
+    object has no attribute 'chunks'` 而被 except Exception 静默吞掉 ——
+    郎溪道其 zip 22 个条目里 14 个 PDF + 2 个 PNG + 4 目录 ≈ 18 个文件，
+    只剩 4 个非 PDF/PNG 文件能进 KB（实测确认）。本类把 zip 条目封装成
+    完整接口的文件对象，行为对齐顶层上传的 UploadedFile。
+    """
+
+    def __init__(self, raw_bytes: bytes, name: str):
+        self._bytes = raw_bytes
+        self.name = name
+        self.size = len(raw_bytes)
+        self._pos = 0
+
+    def read(self, n=-1):
+        if n is None or n < 0:
+            data = self._bytes[self._pos:]
+            self._pos = len(self._bytes)
+        else:
+            data = self._bytes[self._pos:self._pos + n]
+            self._pos += len(data)
+        return data
+
+    def seek(self, offset, whence=0):
+        if whence == 0:
+            self._pos = offset
+        elif whence == 1:
+            self._pos += offset
+        elif whence == 2:
+            self._pos = len(self._bytes) + offset
+
+    def tell(self):
+        return self._pos
+
+    def chunks(self, chunk_size=64 * 1024):
+        # Django UploadedFile 风格的分块迭代器，PdfSplitHandle 写临时文件用
+        old_pos = self._pos
+        self._pos = 0
+        try:
+            while True:
+                data = self.read(chunk_size)
+                if not data:
+                    break
+                yield data
+        finally:
+            self._pos = old_pos
+
+
+def _inject_zip_meta(item, relative_path: str, segments: list):
+    """把 zip 内部路径写到 result item.meta —— 让 batch_save 末尾的
+    auto_tag_documents 能据此识别 role / doc_type / path 标签，与"上传文件夹"
+    路径一致行为。"""
+    if item is None:
+        return
+    meta = dict(item.get('meta') or {})
+    meta['relative_path'] = relative_path
+    meta['path_segments'] = segments
+    item['meta'] = meta
+
+
 default_split_handle = TextSplitHandle()
 split_handles = [
     HTMLSplitHandle(),
@@ -46,6 +114,9 @@ split_handles = [
     XlsxSplitHandle(),
     XlsSplitHandle(),
     CsvSplitHandle(),
+    # 历史版本漏配 ImageOcrSplitHandle —— zip 里独立 PNG/JPG（非 docx 内嵌）
+    # 落到 default_split_handle 把二进制当文本读，必崩；2026-05-25 修复。
+    ImageOcrSplitHandle(),
     default_split_handle
 ]
 
@@ -160,21 +231,36 @@ class ZipSplitHandle(BaseSplitHandle):
             # 获取压缩包中的文件名列表
             files = zip_ref.namelist()
             # 读取压缩包中的文件内容
-            for file in files:
-                if file.endswith('/') or file.startswith('__MACOSX'):
+            for entry_name in files:
+                if entry_name.endswith('/') or entry_name.startswith('__MACOSX'):
                     continue
-                with zip_ref.open(file) as f:
-                    # 对文件内容进行处理
-                    try:
-                        # 处理一下文件名
-                        f.name = get_file_name(f.name)
-                        value = file_to_paragraph(f, pattern_list, with_filter, limit, save_image)
-                        if isinstance(value, list):
-                            result = [*result, *value]
-                        else:
-                            result.append(value)
-                    except Exception:
-                        pass
+                try:
+                    real_name = get_file_name(entry_name)
+                    # 取最后一段作为"文件名"，保留全路径作为 meta；split handler 只用
+                    # 文件名后缀决定 support()，不需要带 zip 内目录。
+                    basename = real_name.replace('\\', '/').rsplit('/', 1)[-1]
+                    with zip_ref.open(entry_name) as zf:
+                        raw_bytes = zf.read()
+                    wrapped = _ZipEntryFile(raw_bytes, basename)
+                    value = file_to_paragraph(wrapped, pattern_list, with_filter, limit, save_image)
+                    # 给每个 result item 注入 path_segments meta —— Phase 2 自动打标会用
+                    segments = [s for s in real_name.replace('\\', '/').split('/') if s]
+                    if isinstance(value, list):
+                        for item in value:
+                            _inject_zip_meta(item, real_name, segments)
+                        result.extend(value)
+                    else:
+                        _inject_zip_meta(value, real_name, segments)
+                        result.append(value)
+                except Exception as e:
+                    # 历史版本是 `except Exception: pass` —— 任何条目失败都静默丢掉，
+                    # 导致用户上传 22 个文件只看到 5 条进来还不知道为什么。现在改记
+                    # warning，让运维能从日志里看出哪些条目失败。批量上传里"单条
+                    # 失败"仍然不阻挡其他条目，但留下证据链。
+                    maxkb_logger.warning(
+                        f"ZipSplitHandle: skipping entry {entry_name!r}: {e!r}"
+                    )
+                    continue
             image_list = get_image_list(result, files)
             result = filter_image_file(result, image_list)
             image_mode_list = []
