@@ -31,6 +31,9 @@ class PeriodType(models.TextChoices):
     ANNUAL = 'annual', '年度'
     QUARTER = 'quarter', '季度'
     MONTH = 'month', '月度'
+    # 相对期间:"期末/期初/本期/上期"等不带年份的列(中国会计准则报表常见)。
+    # period 字符串为表头列名原文,具体年份需结合文档元数据解读。
+    RELATIVE = 'relative', '相对期间'
 
 
 class FinancialStatement(AppModelMixin):

@@ -127,6 +127,17 @@ _YEAR_RE = re.compile(r'(20\d{2}|19\d{2})\s*年?')
 _QUARTER_RE = re.compile(r'(20\d{2})\s*年?\s*[Qq]?\s*([1-4])\s*季度?')
 _MONTH_RE = re.compile(r'(20\d{2})\s*[-./年]\s*(0?[1-9]|1[0-2])\s*月?')
 
+# 中国会计准则报表常用"期末/期初/本期/上期"等抽象期间标记(不带年份)。
+# 命中时把列名本身作为 period 字符串入库 —— 用户后续可以通过 statement 关联
+# 文档元数据/上下文还原成具体年份(Phase 4 改进项)。
+# 顺序敏感:"期末余额"必须在"期末"前匹配,否则只截一半。
+_RELATIVE_PERIOD_TOKENS = (
+    '期末余额', '期初余额', '本期金额', '上期金额',
+    '本年金额', '上年金额', '本年累计', '上年累计',
+    '本期发生额', '上期发生额', '本期数', '上期数',
+    '期末数', '期初数', '年初余额', '年末余额',
+)
+
 # 数字 token：1,234,567.89 / (1,234) / -1234 / – / 空
 _NUMBER_RE = re.compile(r'^[\s　]*'
                         r'(?P<sign>[-(（])?'
@@ -168,9 +179,12 @@ def _detect_unit(headers_blob: str) -> str:
 
 def _detect_periods(header_cells: List[str]) -> tuple[List[str], str]:
     """从表头行识别期间列。返回 (periods, period_type)。
-    优先尝试月度 / 季度，最后退到年度。同一表里期间类型必须一致。
+
+    优先尝试: 月度 → 季度 → 年度 → 相对期间(期末/期初/本期/上期)。
+    "相对期间"是中国会计准则报表的常见表头("期末余额"/"上期金额"等);
+    没有具体年份,但仍是合法的期间标识。命中时 period_type = 'relative'。
     """
-    months, quarters, years = [], [], []
+    months, quarters, years, relatives = [], [], [], []
     for cell in header_cells:
         cell = (cell or '').strip()
         if not cell:
@@ -186,12 +200,21 @@ def _detect_periods(header_cells: List[str]) -> tuple[List[str], str]:
         y_match = _YEAR_RE.search(cell)
         if y_match:
             years.append(y_match.group(1))
+            continue
+        # 相对期间识别:整个 cell 是单个相对期间标记 (e.g. "期末余额")
+        # 不允许"局部匹配",避免误把正文段落识别成期间。
+        for tok in _RELATIVE_PERIOD_TOKENS:
+            if tok in cell and len(cell) <= len(tok) + 4:  # 留点容错给前缀
+                relatives.append(tok)
+                break
     if months:
         return months, 'month'
     if quarters:
         return quarters, 'quarter'
     if years:
         return years, 'annual'
+    if relatives:
+        return relatives, 'relative'
     return [], 'annual'
 
 
