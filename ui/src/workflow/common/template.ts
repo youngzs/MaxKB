@@ -463,6 +463,307 @@ export const applicationTemplate: any = {
       },
     ],
   },
+  // 财务问答模板:assistant 模板的财务定制版。
+  // 适用场景:知识库里已经通过 Phase 1-3 入了审计报告/财务报表 PDF
+  // (OCR 已经把 HTML 表格转成标准 markdown 表格,带具体数字)。
+  //
+  // 关键差异 vs assistant:
+  // - search-knowledge tag_filter 预设 doc_type=审计报告/财务报表,只查带数据的文档
+  // - top_n 15 + max_paragraph_char_number 15000:财务表格长,需要更多上下文
+  // - ai-chat system prompt 强调"用表格里的数字回答 + 标注来源"
+  // - prologue 引导用户问数字类问题
+  finance: {
+    nodes: [
+      {
+        id: 'base-node',
+        type: 'base-node',
+        x: 120,
+        y: 260.30849999999987,
+        properties: {
+          config: {},
+          height: 734.766,
+          showNode: true,
+          stepName: '基本信息',
+          node_data: {
+            desc: '财务问答模板',
+            name: '财务问答助手',
+            prologue:
+              '我是财务问答助手,可以基于知识库里的审计报告和财务报表回答你的问题。\n你可以问:\n- 2024 年净利润是多少?\n- 营业收入近三年变化趋势\n- 资产负债率是多少?\n- 期末货币资金多少?',
+            tts_type: 'BROWSER',
+          },
+          input_field_list: [],
+          user_input_config: {
+            title: '用户输入',
+          },
+          api_input_field_list: [],
+          user_input_field_list: [],
+        },
+      },
+      {
+        id: 'start-node',
+        type: 'start-node',
+        x: 120,
+        y: 929.6914999999999,
+        properties: {
+          config: {
+            fields: [
+              {
+                label: '用户问题',
+                value: 'question',
+              },
+            ],
+            globalFields: [
+              {
+                label: '当前时间',
+                value: 'time',
+              },
+              {
+                label: '历史聊天记录',
+                value: 'history_context',
+              },
+              {
+                label: '对话 ID',
+                value: 'chat_id',
+              },
+            ],
+          },
+          fields: [
+            {
+              label: '用户问题',
+              value: 'question',
+            },
+          ],
+          height: 364,
+          showNode: true,
+          stepName: '开始',
+          globalFields: [
+            {
+              label: '当前时间',
+              value: 'time',
+            },
+          ],
+        },
+      },
+      {
+        id: 'fd0324fc-f5e4-4fa6-a2d9-cb251b467605',
+        type: 'search-knowledge-node',
+        x: 710,
+        y: 929.6914999999999,
+        properties: {
+          config: {
+            fields: [
+              { label: '检索结果的分段列表', value: 'paragraph_list' },
+              { label: '满足直接回答的分段列表', value: 'is_hit_handling_method_list' },
+              { label: '检索结果', value: 'data' },
+              { label: '满足直接回答的分段内容', value: 'directly_return' },
+            ],
+          },
+          height: 794,
+          showNode: true,
+          stepName: '知识库检索',
+          condition: 'AND',
+          node_data: {
+            knowledge_id_list: [],
+            knowledge_setting: {
+              // 财务表跨多段:放大 top_n + 上下文窗口
+              top_n: 15,
+              similarity: 0.5,
+              search_mode: 'embedding',
+              max_paragraph_char_number: 15000,
+            },
+            // 预设标签:只查带数据的文档。同 key 多 value=OR。
+            // 用户上传时只要 doc_type 自动打标命中(Phase 2 已完成),就能精确召回。
+            tag_filter: [
+              { key: 'doc_type', value: '审计报告' },
+              { key: 'doc_type', value: '财务报表' },
+            ],
+            question_reference_address: ['start-node', 'question'],
+            all_knowledge_id_list: [],
+            knowledge_list: [],
+          },
+        },
+      },
+      {
+        id: '420a6e4f-44ff-4847-bb81-0923630846b5',
+        type: 'condition-node',
+        x: 1300,
+        y: 929.6914999999999,
+        properties: {
+          width: 600,
+          config: {
+            fields: [{ label: '分支名称', value: 'branch_name' }],
+          },
+          height: 544.148,
+          showNode: true,
+          stepName: '判断器',
+          condition: 'AND',
+          node_data: {
+            branch: [
+              {
+                id: '6847',
+                type: 'IF',
+                condition: 'and',
+                conditions: [
+                  {
+                    field: ['fd0324fc-f5e4-4fa6-a2d9-cb251b467605', 'paragraph_list'],
+                    value: 1,
+                    compare: 'is_not_null',
+                  },
+                ],
+              },
+              { id: '2794', type: 'ELSE', condition: 'and', conditions: [] },
+            ],
+          },
+          branch_condition_list: [
+            { index: 0, height: 121.383, id: '6847' },
+            { index: 1, height: 44, id: '2794' },
+          ],
+        },
+      },
+      {
+        id: 'f7c3b4a2-cb80-4e47-b050-7fef0315daaf',
+        type: 'ai-chat-node',
+        x: 1890,
+        y: 929.6914999999999,
+        properties: {
+          config: {
+            fields: [
+              { label: 'AI 回答内容', value: 'answer' },
+              { label: '思考过程', value: 'reasoning_content' },
+            ],
+          },
+          height: 993.383,
+          showNode: true,
+          stepName: 'AI 对话',
+          condition: 'AND',
+          node_data: {
+            // 财务专用 system prompt:强调结构化数据 + 引用规范
+            system:
+              '你是一名严谨的财务问答助手,服务对象是融资分析师。\n\n' +
+              '工作准则:\n' +
+              '1. 知识库召回的段落含审计报告/财务报表的 markdown 表格 (带 |---|---| 分隔,数字精确到小数点)。' +
+              '回答数字类问题时,必须直接引用表格里的精确数字,不要四舍五入也不要自己计算 (除非用户明确要求)。\n' +
+              '2. 每条数字回答都标注 [来源:文档名 / 报告期],例如:净利润 28,828,115.03 元 [来源:道其2025审计报告 / 本期金额]。\n' +
+              '3. 如果用户问的数字在已召回的段落中找不到,明确说"该数据未在已收录的报表中找到",' +
+              '不要猜测、不要按比例推算。\n' +
+              '4. 跨期对比(同比/环比)时,先列出各期原值,再算变化率,展示计算过程。\n' +
+              '5. 用清晰的 markdown 表格呈现多期/多科目对比;单项查询直接回答数字+单位+期间。\n' +
+              '6. 财务术语用规范说法 (营业收入 / 净利润 / 资产合计 / 负债合计 / 所有者权益 等);避免口语化。',
+            prompt:
+              '【知识库召回的财务报表段落】\n{{知识库检索.data}}\n\n' +
+              '【用户问题】\n{{开始.question}}\n\n' +
+              '请基于上面的报表数据回答用户问题。',
+            model_id: '',
+            is_result: true,
+            max_tokens: null,
+            temperature: null,
+            dialogue_type: 'WORKFLOW',
+            model_setting: {
+              reasoning_content_end: '</think>',
+              reasoning_content_start: '<think>',
+              reasoning_content_enable: false,
+            },
+            dialogue_number: 1,
+          },
+        },
+      },
+      {
+        id: '04dd6c1e-95f9-4757-bb3e-134d503fce54',
+        type: 'reply-node',
+        x: 1890,
+        y: 1798.383,
+        properties: {
+          config: {
+            fields: [{ label: '内容', value: 'answer' }],
+          },
+          height: 504,
+          showNode: true,
+          stepName: '指定回复',
+          condition: 'AND',
+          node_data: {
+            fields: [],
+            content:
+              '抱歉,我没有在知识库找到与你问题相关的财务数据。可能原因:\n' +
+              '- 该公司/期间的审计报告还没入知识库\n' +
+              '- 上传的文档没有被标记为"审计报告"或"财务报表"\n' +
+              '- 问题中的科目名与报表里的标准名不一致(试试用规范说法,如"营业收入"而非"销售额")',
+            is_result: true,
+            reply_type: 'content',
+          },
+        },
+      },
+    ],
+    edges: [
+      {
+        id: '73f8992c-65ef-409a-a151-378d0927f2aa',
+        type: 'app-edge',
+        sourceNodeId: 'start-node',
+        targetNodeId: 'fd0324fc-f5e4-4fa6-a2d9-cb251b467605',
+        startPoint: { x: 280, y: 929.6914999999999 },
+        endPoint: { x: 550, y: 929.6914999999999 },
+        properties: {},
+        pointsList: [
+          { x: 280, y: 929.6914999999999 },
+          { x: 390, y: 929.6914999999999 },
+          { x: 440, y: 929.6914999999999 },
+          { x: 550, y: 929.6914999999999 },
+        ],
+        sourceAnchorId: 'start-node_right',
+        targetAnchorId: 'fd0324fc-f5e4-4fa6-a2d9-cb251b467605_left',
+      },
+      {
+        id: '6a8d23d9-5179-424e-80c2-f08d37cdb8d4',
+        type: 'app-edge',
+        sourceNodeId: 'fd0324fc-f5e4-4fa6-a2d9-cb251b467605',
+        targetNodeId: '420a6e4f-44ff-4847-bb81-0923630846b5',
+        startPoint: { x: 870, y: 929.6914999999999 },
+        endPoint: { x: 1010, y: 929.6914999999999 },
+        properties: {},
+        pointsList: [
+          { x: 870, y: 929.6914999999999 },
+          { x: 980, y: 929.6914999999999 },
+          { x: 900, y: 929.6914999999999 },
+          { x: 1010, y: 929.6914999999999 },
+        ],
+        sourceAnchorId: 'fd0324fc-f5e4-4fa6-a2d9-cb251b467605_right',
+        targetAnchorId: '420a6e4f-44ff-4847-bb81-0923630846b5_left',
+      },
+      {
+        id: '9bc8721b-07aa-4730-9347-910ed64e26b9',
+        type: 'app-edge',
+        sourceNodeId: '420a6e4f-44ff-4847-bb81-0923630846b5',
+        targetNodeId: 'f7c3b4a2-cb80-4e47-b050-7fef0315daaf',
+        startPoint: { x: 1590, y: 922.6919999999999 },
+        endPoint: { x: 1730, y: 929.6914999999999 },
+        properties: {},
+        pointsList: [
+          { x: 1590, y: 922.6919999999999 },
+          { x: 1700, y: 922.6919999999999 },
+          { x: 1620, y: 929.6914999999999 },
+          { x: 1730, y: 929.6914999999999 },
+        ],
+        sourceAnchorId: '420a6e4f-44ff-4847-bb81-0923630846b5_6847_right',
+        targetAnchorId: 'f7c3b4a2-cb80-4e47-b050-7fef0315daaf_left',
+      },
+      {
+        id: 'c276a5b6-ec29-4ab9-b911-a0a929ff193f',
+        type: 'app-edge',
+        sourceNodeId: '420a6e4f-44ff-4847-bb81-0923630846b5',
+        targetNodeId: '04dd6c1e-95f9-4757-bb3e-134d503fce54',
+        startPoint: { x: 1590, y: 1013.3834999999998 },
+        endPoint: { x: 1730, y: 1798.383 },
+        properties: {},
+        pointsList: [
+          { x: 1590, y: 1013.3834999999998 },
+          { x: 1700, y: 1013.3834999999998 },
+          { x: 1620, y: 1798.383 },
+          { x: 1730, y: 1798.383 },
+        ],
+        sourceAnchorId: '420a6e4f-44ff-4847-bb81-0923630846b5_2794_right',
+        targetAnchorId: '04dd6c1e-95f9-4757-bb3e-134d503fce54_left',
+      },
+    ],
+  },
 }
 
 export const knowledgeTemplate: any = {

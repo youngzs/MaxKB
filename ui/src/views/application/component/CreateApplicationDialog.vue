@@ -45,7 +45,7 @@
       >
         <div class="w-full">
           <el-row :gutter="16">
-            <el-col :span="12">
+            <el-col :span="8">
               <el-card
                 class="template-radio-card cursor text-center flex-center"
                 shadow="never"
@@ -58,7 +58,7 @@
                 </div>
               </el-card>
             </el-col>
-            <el-col :span="12">
+            <el-col :span="8">
               <CardBox
                 :title="$t('views.application.form.appTemplate.assistantApp.title')"
                 :description="$t('views.application.form.appTemplate.assistantApp.description')"
@@ -69,6 +69,20 @@
               >
                 <template #icon>
                   <LogoIcon height="32px" />
+                </template>
+              </CardBox>
+            </el-col>
+            <el-col :span="8">
+              <CardBox
+                title="财务问答"
+                description="基于审计报告/财务报表回答精确数字问题,自动引用来源。需先把财务 PDF 入库。"
+                shadow="never"
+                class="template-radio-card cursor"
+                :class="appTemplate === 'finance' ? 'border-active' : ''"
+                @click="selectedType('finance')"
+              >
+                <template #icon>
+                  <AppIcon iconName="app-finance" style="font-size: 32px; color: #4CAF50" />
                 </template>
               </CardBox>
             </el-col>
