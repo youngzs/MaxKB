@@ -113,6 +113,24 @@
         <div v-loading="loading">
           <h4 class="title-decoration-1 mb-8">{{ $t('views.document.setRules.title.preview') }}</h4>
 
+          <!-- 扫描版/CID 乱码 PDF 在预览阶段 0 段是正常的:这些文件需要 OCR 异步重抽,
+               导入后会自动补内容。提示用户不要误以为解析失败。-->
+          <el-alert
+            v-if="hasEmptyPreviewDoc"
+            type="info"
+            :closable="false"
+            show-icon
+            class="mb-12"
+          >
+            <template #title>
+              <span class="lighter">
+                {{ emptyDocCount }} 个文档预览为空(扫描件 / 特殊字体 PDF / 图片)。
+                导入后 OCR 会异步重抽,1-3 分钟后字符数会自动填充 ——
+                <strong>正常点"开始导入"即可</strong>,不需要重新上传。
+              </span>
+            </template>
+          </el-alert>
+
           <ParagraphPreview v-model:data="paragraphList" :isConnect="checkedConnect" :knowledge-id="id"/>
         </div>
       </el-col>
@@ -148,6 +166,22 @@ const apiType = computed(() => {
 const radio = ref('1')
 const loading = ref(false)
 const paragraphList = ref<any[]>([])
+
+// 是否有文档预览为空段 —— 扫描件 / CID 乱码 PDF / 图片走 OCR 异步路径,
+// 在 sync split 阶段段落是空的,导入后 celery OCR 任务才会补内容。
+// 提示用户这是正常的,不要误以为是解析失败。
+const emptyDocCount = computed(
+  () =>
+    paragraphList.value.filter(
+      (d: any) =>
+        !d.content ||
+        d.content.length === 0 ||
+        d.content.every((p: any) => !(p.content || '').trim()),
+    ).length,
+)
+const hasEmptyPreviewDoc = computed(
+  () => paragraphList.value.length > 0 && emptyDocCount.value > 0,
+)
 const patternLoading = ref<boolean>(false)
 const checkedConnect = ref<boolean>(false)
 

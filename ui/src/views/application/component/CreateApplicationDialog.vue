@@ -46,17 +46,18 @@
         <div class="w-full">
           <el-row :gutter="16">
             <el-col :span="8">
-              <el-card
-                class="template-radio-card cursor text-center flex-center"
+              <CardBox
+                :title="$t('views.application.form.appTemplate.blankApp.title')"
+                description="不使用模板,从零搭建工作流。"
                 shadow="never"
-                @click="selectedType('blank')"
+                class="template-radio-card cursor"
                 :class="appTemplate === 'blank' ? 'border-active' : ''"
+                @click="selectedType('blank')"
               >
-                <div class="flex-center p-24">
-                  <AppIcon iconName="app-add-outlined" class="mr-12"></AppIcon>
-                  {{ $t('views.application.form.appTemplate.blankApp.title') }}
-                </div>
-              </el-card>
+                <template #icon>
+                  <AppIcon iconName="app-add-outlined" style="font-size: 32px" />
+                </template>
+              </CardBox>
             </el-col>
             <el-col :span="8">
               <CardBox
@@ -75,7 +76,7 @@
             <el-col :span="8">
               <CardBox
                 title="财务问答"
-                description="基于审计报告/财务报表回答精确数字问题,自动引用来源。需先把财务 PDF 入库。"
+                description="检索审计报告/财务报表,精确引用数字与来源。"
                 shadow="never"
                 class="template-radio-card cursor"
                 :class="appTemplate === 'finance' ? 'border-active' : ''"
