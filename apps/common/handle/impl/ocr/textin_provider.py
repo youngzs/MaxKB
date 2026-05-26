@@ -13,11 +13,77 @@
 import concurrent.futures
 import json
 import os
+import re
 
 import requests
 
 from common.handle.impl.ocr.provider import OcrError, OcrProvider
 from common.utils.logger import maxkb_logger
+
+
+# ------------------------- HTML 表格 → 标准 markdown 表格 -------------------------
+#
+# TextIn 的 `data.markdown` 把表格用 `<table><tr><td>...</td></tr></table>` 内嵌在
+# markdown 里(非标准 markdown,是 TextIn 自家约定)。下游 chunk_markdown_table /
+# financial_extractor.parse_table 都只认 GitHub 风格的 `| --- |` 分隔行 markdown 表格。
+# 这里把 HTML 表格转成标准 markdown 表格,下游零改动就能吃到结构化表格数据。
+# 用 regex 解析(不引 BeautifulSoup 新依赖),TextIn 输出的 HTML 结构规整,够用。
+
+_TR_RE = re.compile(r'<tr[^>]*>(.*?)</tr>', re.S | re.I)
+_CELL_RE = re.compile(r'<t[hd][^>]*>(.*?)</t[hd]>', re.S | re.I)
+_TABLE_RE = re.compile(r'<table\b[^>]*>.*?</table>', re.S | re.I)
+_TAG_RE = re.compile(r'<[^>]+>')
+_WS_RE = re.compile(r'\s+')
+_HTML_ENTITIES = (
+    ('&nbsp;', ' '), ('&amp;', '&'), ('&lt;', '<'),
+    ('&gt;', '>'), ('&quot;', '"'), ('&#39;', "'"),
+)
+
+
+def _clean_cell_text(cell_html: str) -> str:
+    """单元格 HTML → 干净文本。剥标签 + entity decode + 空白折叠 + 转义 |。"""
+    text = _TAG_RE.sub(' ', cell_html or '')
+    for entity, ch in _HTML_ENTITIES:
+        text = text.replace(entity, ch)
+    text = _WS_RE.sub(' ', text).strip()
+    # markdown 表格里裸 | 会破坏列对齐,转义成 \|
+    return text.replace('|', '\\|')
+
+
+def _html_table_to_markdown(table_html: str) -> str:
+    """单个 <table>...</table> → 标准 GitHub markdown 表格。失败返回空串。"""
+    rows_html = _TR_RE.findall(table_html)
+    if not rows_html:
+        return ''
+    rows = []
+    for row_html in rows_html:
+        cells = [_clean_cell_text(c) for c in _CELL_RE.findall(row_html)]
+        if any(c for c in cells):
+            rows.append(cells)
+    if not rows:
+        return ''
+    # 列数对齐(缺位补空)。表头 = 第一行,其余 = 数据。
+    col_count = max(len(r) for r in rows)
+    rows = [r + [''] * (col_count - len(r)) for r in rows]
+    sep = '| ' + ' | '.join('---' for _ in range(col_count)) + ' |'
+    out_lines = ['| ' + ' | '.join(rows[0]) + ' |', sep]
+    out_lines.extend('| ' + ' | '.join(r) + ' |' for r in rows[1:])
+    return '\n'.join(out_lines)
+
+
+def _convert_html_tables_to_markdown(md_text: str) -> str:
+    """扫 markdown 里的所有 <table>...</table>,替换为标准 markdown 表格。
+    前后加空行,确保下游 chunk_markdown_table 识别表格起止。"""
+    if not md_text or '<table' not in md_text.lower():
+        return md_text
+
+    def _replace(m: 're.Match[str]') -> str:
+        converted = _html_table_to_markdown(m.group(0))
+        if not converted:
+            return m.group(0)  # 失败保留原 HTML,起码内容不丢
+        return '\n\n' + converted + '\n\n'
+
+    return _TABLE_RE.sub(_replace, md_text)
 
 # TextIn 同步解析端点。异步端点（parse/async）适合超大文件批处理，但本 provider
 # 的契约是"每张图片 / 每页 PNG 单独调用"，同步端点足够。
@@ -129,4 +195,8 @@ class TextinOcrProvider(OcrProvider):
             # 真·空白页：返回空字符串，上层会跳过本页
             return ''
 
+        # 把 markdown 里的 <table>...</table> 转成标准 markdown 表格。这样下游
+        # chunk_markdown_table / financial_extractor 能像识别普通 markdown 表格
+        # 一样吃到 TextIn 的结构化表格输出。失败保留原 HTML 不阻塞。
+        markdown = _convert_html_tables_to_markdown(markdown)
         return markdown.strip()

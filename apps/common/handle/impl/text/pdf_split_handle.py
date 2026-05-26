@@ -102,49 +102,82 @@ def _split_text_preserving_md_tables(text: str, split_model: 'SplitModel') -> li
 
 # 当 pypdf 从一页抽到的文字短于该阈值时，认为是扫描页，尝试 OCR fallback
 _OCR_PAGE_TEXT_THRESHOLD = 10
-# 乱码检测：CID 字体没有 ToUnicode CMap 时，pypdf 抽出来的字符全部落在
-# Unicode Private Use Area (U+E000–U+F8FF) 或 replacement char (U+FFFD)。
-# 这类页面字符数往往充足（几千字），但内容完全不可读。判定阈值：PUA + FFFD 占比
-# 超过 _OCR_GARBLED_RATIO 就视为乱码、触发 OCR fallback。
+# 乱码检测:PUA + FFFD 占比阈值。CID 字体没 ToUnicode CMap 时的典型表现。
 _OCR_GARBLED_RATIO = float(os.environ.get('MAXKB_PDF_GARBLED_RATIO', '0.30'))
-# 乱码检测的另一条 signal：正常文本（CJK / 拉丁字母 / 数字）占比低于这个阈值，
-# 即使没有 PUA 字符也可能是乱码（比如全是奇怪符号）。
+# 乱码检测:正常文本(CJK + 拉丁 + 数字)占比下限。比 PUA 占比更通用 ——
+# 涵盖"全是奇怪符号"的情况。
 _OCR_NORMAL_RATIO = float(os.environ.get('MAXKB_PDF_NORMAL_RATIO', '0.30'))
+# 乱码检测:CJK 占比下限。专门针对"PDF 把 CJK glyph 映射到 ASCII 范围"的乱码 ——
+# 这类乱码 PUA 占比 = 0、正常字符占比可能很高(因为 ASCII 算"正常"),但实际
+# 没有任何可读中文。中文文档若 CJK 占比 < 此阈值视为乱码。
+# 注意:对中文为主的文档敏感;若是英文 PDF 应不触发(英文 PDF 整体字符多但
+# 字符数 << 长度阈值时也不会跑此检查 —— 见 _is_garbled_text 头部 _MIN_LEN)。
+_OCR_CJK_RATIO_MIN = float(os.environ.get('MAXKB_PDF_CJK_RATIO_MIN', '0.05'))
+# ASCII 字母占比下限:配合 CJK 占比检查,区分"英文 PDF"(字母多,合法)
+# vs "ASCII-mapped 乱码"(数字+符号多,字母少)。两者都 CJK=0,但字母占比迥异。
+_OCR_LATIN_RATIO_MIN = float(os.environ.get('MAXKB_PDF_LATIN_RATIO_MIN', '0.30'))
+# 触发 CJK 占比检查的最小文本长度:太短(< 这个)的文字不用 CJK 占比判断 ——
+# 比如单一英文 cover 页字符 100 个,CJK 0,但是合法的英文页。
+_OCR_CJK_CHECK_MIN_LEN = int(os.environ.get('MAXKB_PDF_CJK_CHECK_MIN_LEN', '500'))
 
 
 def _is_garbled_text(text: str) -> bool:
-    """判断一段 PDF 抽出的文本是不是乱码。
+    """判断一段 PDF 抽出的文本是不是乱码。三类乱码:
 
-    background：审计报告 / 财务报表 PDF 经常嵌入 CID 字体但不带 ToUnicode 表
-    （字体引擎用 glyph id 直接渲染），pypdf 拿不到字符 → Unicode 映射，
-    把 glyph 当 PUA 字符吐出。表现：页面里几千字符，全是 □ □ □ □ ……
+    1) **PUA 乱码** (CID 无 ToUnicode → glyph 落 U+E000-F8FF):字符多但全是 □。
+       识别:PUA + replacement char 占比 > _OCR_GARBLED_RATIO。
+    2) **奇怪符号乱码**(字符落到非常规 Unicode 区段):字符多但既不是 CJK 也
+       不是拉丁/数字。识别:正常文本占比 < _OCR_NORMAL_RATIO。
+    3) **ASCII-mapped 乱码**(PDF 把 CJK glyph 映射到 ASCII 范围,常见于
+       审计报告类 PDF):字符多、ASCII 数字/符号 数量也多、PUA 几乎为 0,但
+       CJK 极少 *且* ASCII 字母也极少(乱码主要是数字+符号,不是英文单词)。
+       识别:长文本下 CJK < _OCR_CJK_RATIO_MIN AND ASCII 字母占比 <
+       _OCR_LATIN_RATIO_MIN。
 
-    历史上 _try_ocr_empty_pages 只看"字符总数 < 10"，对这种情况完全无能为力 ——
-    本函数补充判断：字符数足够多但 PUA 占比过高 / 正常字符占比过低，
-    也按"扫描页"对待，让上层走 OCR fallback（TextIn / vision_llm）。
+    背景:历史上 _try_ocr_empty_pages 只看"字符总数 < 10",对(1)(2)(3)都无能为力。
     """
     if not text or len(text) < 50:
         return False
     bad = 0
     good = 0
+    cjk = 0
+    latin = 0
     for c in text:
         cp = ord(c)
         if 0xe000 <= cp <= 0xf8ff or cp == 0xfffd:
             bad += 1
-        elif (
+            continue
+        is_cjk = (
             0x4e00 <= cp <= 0x9fff       # CJK Unified Ideographs
             or 0x3400 <= cp <= 0x4dbf    # CJK Extension A
-            or 0x3000 <= cp <= 0x303f    # CJK Symbols & Punctuation
+            or 0xf900 <= cp <= 0xfaff    # CJK Compatibility Ideographs
+        )
+        is_latin = 0x0041 <= cp <= 0x005a or 0x0061 <= cp <= 0x007a  # A-Z / a-z
+        if is_cjk:
+            cjk += 1
+            good += 1
+        elif is_latin:
+            latin += 1
+            good += 1
+        elif (
+            0x3000 <= cp <= 0x303f       # CJK Symbols & Punctuation
             or 0xff00 <= cp <= 0xffef    # Halfwidth & Fullwidth Forms
             or 0x0030 <= cp <= 0x0039    # ASCII digits
-            or 0x0041 <= cp <= 0x005a    # ASCII upper
-            or 0x0061 <= cp <= 0x007a    # ASCII lower
         ):
             good += 1
     total = len(text)
     if bad / total > _OCR_GARBLED_RATIO:
         return True
     if good / total < _OCR_NORMAL_RATIO:
+        return True
+    # (3) ASCII-mapped 乱码:长文本里 CJK 极少 AND ASCII 字母也极少。
+    # 仅在文本足够长时触发,避免误判英文 cover 页(英文 ASCII 字母多)
+    # 或中文短页(长度 < 阈值时数据不足以判)。
+    if (
+        total >= _OCR_CJK_CHECK_MIN_LEN
+        and cjk / total < _OCR_CJK_RATIO_MIN
+        and latin / total < _OCR_LATIN_RATIO_MIN
+    ):
         return True
     return False
 
@@ -653,8 +686,8 @@ class PdfSplitHandle(BaseSplitHandle):
         all_text = ''.join(c.get('content', '') for c in chapters)
         if _is_garbled_text(all_text):
             maxkb_logger.info(
-                f"PDF TOC text detected as garbled (CID font without ToUnicode); "
-                f"falling back to full-page extraction so OCR can run."
+                "PDF TOC text detected as garbled (CID font without ToUnicode); "
+                "falling back to full-page extraction so OCR can run."
             )
             return None
         return chapters
