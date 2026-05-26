@@ -20,6 +20,9 @@ interface StateInterface {
   REVOKE: '4'
   // 取消成功
   REVOKED: '5'
+  // 部分成功:子任务部分 SUCCESS 部分 FAILURE。UI 黄色"警告"。
+  // 后端 2026-05-26 引入,见 apps/knowledge/models/knowledge.py。
+  WARNING: '6'
   IGNORED: 'n'
 }
 const TaskType: TaskTypeInterface = {
@@ -40,6 +43,8 @@ const State: StateInterface = {
   REVOKE: '4',
   // 取消成功
   REVOKED: '5',
+  // 部分成功
+  WARNING: '6',
   IGNORED: 'n'
 }
 class Status {

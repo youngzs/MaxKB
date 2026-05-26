@@ -250,6 +250,12 @@
                           >{{ $t('common.status.fail') }}
                         </el-dropdown-item>
                         <el-dropdown-item
+                          :class="filterMethod['status'] === State.WARNING ? 'is-active' : ''"
+                          class="justify-center"
+                          :command="beforeCommand('status', State.WARNING)"
+                          >部分成功
+                        </el-dropdown-item>
+                        <el-dropdown-item
                           :class="
                             filterMethod['status'] === State.STARTED &&
                             filterMethod['task_type'] == TaskType.EMBEDDING

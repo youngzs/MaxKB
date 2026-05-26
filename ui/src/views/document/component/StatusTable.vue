@@ -13,6 +13,10 @@
         <el-icon class="color-danger"><CircleCloseFilled /></el-icon>
         {{ stateMap[status.state](status.type) }}
       </el-text>
+      <el-text class="color-text-primary" v-else-if="status.state === State.WARNING">
+        <el-icon class="color-warning"><WarningFilled /></el-icon>
+        {{ stateMap[status.state](status.type) }}
+      </el-text>
       <el-text class="color-text-primary" v-else-if="status.state === State.STARTED">
         <el-icon class="is-loading color-primary"><Loading /></el-icon>
         {{ stateMap[status.state](status.type) }}
@@ -28,7 +32,13 @@
     </span>
     <span
       class="ml-8 lighter"
-      :style="{ color: [State.FAILURE, State.REVOKED].includes(status.state) ? '#F54A45' : '' }"
+      :style="{
+        color: [State.FAILURE, State.REVOKED].includes(status.state)
+          ? '#F54A45'
+          : status.state === State.WARNING
+          ? '#E6A23C'
+          : '',
+      }"
     >
       {{ $t('views.document.fileStatus.finish') }}
       {{

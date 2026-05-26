@@ -212,11 +212,25 @@ class ListenerManagement:
             status[task_type] = State.REVOKED
         else:
             status[task_type] = State.SUCCESS
+        # 2026-05-26:汇总段落级 SUCCESS / FAILURE 计数,区分"全部失败" vs
+        # "部分失败"。历史行为是任何 FAILURE → 整文档 FAILURE,导致 6 段向量化
+        # 5/6 成功也显示纯失败,用户误判文档完全不可用。
+        # 新行为:有 FAILURE 且有 SUCCESS → WARNING(部分成功,UI 黄色);
+        # 全 FAILURE 无 SUCCESS → FAILURE(纯失败,UI 红色)。
+        has_failure = False
+        has_success = False
         for item in _document.status_meta.get('aggs', []):
             agg_status = item.get('status')
-            agg_count = item.get('count')
-            if Status(agg_status)[task_type] == State.FAILURE and agg_count > 0:
-                status[task_type] = State.FAILURE
+            agg_count = item.get('count') or 0
+            if agg_count <= 0:
+                continue
+            agg_state = Status(agg_status)[task_type]
+            if agg_state == State.FAILURE:
+                has_failure = True
+            elif agg_state == State.SUCCESS:
+                has_success = True
+        if has_failure:
+            status[task_type] = State.WARNING if has_success else State.FAILURE
         ListenerManagement.update_status(QuerySet(Document).filter(id=document_id), task_type, status[task_type])
 
         ListenerManagement.update_status(QuerySet(Paragraph).annotate(

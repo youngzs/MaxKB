@@ -27,6 +27,10 @@
         <el-icon class="color-danger"><CircleCloseFilled /></el-icon>
         {{ stateMap[aggStatus.value](aggStatus.key) }}
       </el-text>
+      <el-text class="color-text-primary" v-else-if="aggStatus?.value === State.WARNING">
+        <el-icon class="color-warning"><WarningFilled /></el-icon>
+        {{ stateMap[aggStatus.value](aggStatus.key) }}
+      </el-text>
       <el-text class="color-text-primary" v-else-if="aggStatus?.value === State.STARTED">
         <el-icon class="is-loading color-primary"><Loading /></el-icon>
         {{ stateMap[aggStatus.value](aggStatus.key) }}
@@ -49,11 +53,14 @@ import StatusTable from '@/views/document/component/StatusTable.vue'
 import { t } from '@/locales'
 const props = defineProps<{ status: string; statusMeta: any }>()
 const visible = ref<boolean>(false)
+// 优先级:REVOKE/STARTED/PENDING 在进行中;FAILURE 比 WARNING 更糟,优先;
+// WARNING 比纯 SUCCESS 该展示,所以在 SUCCESS 之前。
 const checkList: Array<string> = [
   State.REVOKE,
   State.STARTED,
   State.PENDING,
   State.FAILURE,
+  State.WARNING,
   State.REVOKED,
   State.SUCCESS,
 ]
@@ -85,6 +92,7 @@ const stateMap: any = {
   [State.REVOKE]: (type: number) => t('common.status.REVOKE'),
   [State.REVOKED]: (type: number) => t('common.status.success'),
   [State.FAILURE]: (type: number) => t('common.status.fail'),
+  [State.WARNING]: (type: number) => '部分成功',
   [State.SUCCESS]: (type: number) => t('common.status.success'),
 }
 </script>
