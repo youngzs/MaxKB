@@ -106,7 +106,8 @@ class ChatInfo:
                  exclude_document_id_list: list[str],
                  application_id: str,
                  debug=False,
-                 session_knowledge_locked: bool = False):
+                 session_knowledge_locked: bool = False,
+                 persist_debug: bool = False):
         """
         :param chat_id:                     对话id
         :param chat_user_id                 对话用户id
@@ -121,6 +122,11 @@ class ChatInfo:
             True 表示 knowledge_id_list/exclude_document_id_list 已经由调用方按
             会话级隔离逻辑确定，后续 get_application 不应再从应用绑定中重新读取覆盖；
             False（默认）保持原有行为——SIMPLE 应用每次取应用当前的知识库绑定。
+        :param persist_debug:               持久化调试会话。
+            默认 False——调试会话仅存活于 30 分钟缓存、不落库。
+            True 时（chat-entry 专用助手走此路径）调试会话的 Chat/ChatRecord 也会
+            写入数据库，并把会话级知识库设置存进 Chat.meta，使对话可跨缓存续聊。
+            仅在 debug=True 时有意义。
         """
         self.chat_id = chat_id
         self.chat_user_id = chat_user_id
@@ -135,6 +141,32 @@ class ChatInfo:
         self.source = source
         self.debug = debug
         self.session_knowledge_locked = session_knowledge_locked
+        self.persist_debug = persist_debug
+
+    @property
+    def should_persist(self):
+        """是否需要把会话与记录写入数据库。
+
+        非调试会话照旧持久化；调试会话仅在显式开启 persist_debug 时持久化
+        （chat-entry 专用助手即走此路径，使调试对话也可跨缓存存活、随时续聊）。
+        """
+        return (not self.debug) or self.persist_debug
+
+    def build_persist_meta(self):
+        """持久化调试会话时写入 Chat.meta 的会话级设置。
+
+        放在 session_setting 命名空间下，避免与 set_chat_variable 写入的
+        对话变量冲突。DebugChatSerializers 在缓存失效后据此重建 ChatInfo。
+        """
+        return {
+            'session_setting': {
+                'debug': self.debug,
+                'persist_debug': self.persist_debug,
+                'session_knowledge_locked': self.session_knowledge_locked,
+                'knowledge_id_list': self.knowledge_id_list,
+                'exclude_document_id_list': self.exclude_document_id_list,
+            }
+        }
 
     @staticmethod
     def get_no_references_setting(knowledge_setting, model_setting):
@@ -279,12 +311,14 @@ class ChatInfo:
                 'chat_user_type': chat_user_type, 'ip_address': ip_address, 'source': source, 'form_data': form_data}
 
     def set_chat(self, question):
-        if not self.debug:
+        if self.should_persist:
             if not QuerySet(Chat).filter(id=self.chat_id).exists():
                 Chat(id=self.chat_id, application_id=self.application_id, abstract=question[0:1024],
                      chat_user_id=self.chat_user_id, chat_user_type=self.chat_user_type,
-                     ip_address=self.ip_address, source=self.source,
-                     asker=self.get_chat_user()).save()
+                     # 调试会话经 open 时未携带 ip/source，兜底为非空默认值避免违反库表约束
+                     ip_address=self.ip_address or '', source=self.source or {},
+                     asker=self.get_chat_user(),
+                     meta=self.build_persist_meta() if self.persist_debug else {}).save()
 
     def set_chat_variable(self, chat_context):
         if not self.debug:
@@ -320,12 +354,14 @@ class ChatInfo:
                 break
         if is_save:
             self.chat_record_list.append(chat_record)
-        if not self.debug:
+        if self.should_persist:
             if not QuerySet(Chat).filter(id=self.chat_id).exists():
                 Chat(id=self.chat_id, application_id=self.application_id, abstract=chat_record.problem_text[0:1024],
                      chat_user_id=self.chat_user_id, chat_user_type=self.chat_user_type,
-                     ip_address=self.ip_address, source=self.source,
-                     asker=self.get_chat_user()).save()
+                     # 调试会话经 open 时未携带 ip/source，兜底为非空默认值避免违反库表约束
+                     ip_address=self.ip_address or '', source=self.source or {},
+                     asker=self.get_chat_user(),
+                     meta=self.build_persist_meta() if self.persist_debug else {}).save()
             else:
                 QuerySet(Chat).filter(id=self.chat_id).update(update_time=timezone.now())
             # 插入会话记录
@@ -342,7 +378,7 @@ class ChatInfo:
                                                                    'details': chat_record.details,
                                                                    'improve_paragraph_id_list': chat_record.improve_paragraph_id_list,
                                                                    'run_time': chat_record.run_time,
-                                                                   'source': chat_record.source,
+                                                                   'source': chat_record.source or {},
                                                                    'ip_address': chat_record.ip_address or '',
                                                                    'index': chat_record.index},
                                                   defaults={
@@ -357,7 +393,7 @@ class ChatInfo:
                                                       'improve_paragraph_id_list': chat_record.improve_paragraph_id_list,
                                                       'run_time': chat_record.run_time,
                                                       'index': chat_record.index,
-                                                      'source': chat_record.source,
+                                                      'source': chat_record.source or {},
                                                       'ip_address': chat_record.ip_address or '',
                                                   })
             ChatCountSerializer(data={'chat_id': self.chat_id}).update_chat()
@@ -377,6 +413,8 @@ class ChatInfo:
             'debug': self.debug,
             # 会话级知识库锁定标志——随 ChatInfo 一起缓存，决定后续 get_application 是否覆盖
             'session_knowledge_locked': self.session_knowledge_locked,
+            # 持久化调试会话标志——随 ChatInfo 一起缓存，决定后续 chat 是否落库
+            'persist_debug': self.persist_debug,
         }
 
     def chat_record_to_map(self, chat_record):
@@ -428,8 +466,9 @@ class ChatInfo:
                      chat_info_dict.get('exclude_document_id_list'),
                      chat_info_dict.get('application_id'),
                      debug=chat_info_dict.get('debug'),
-                     # 兼容历史缓存：缺失字段视为未锁定（沿用原有行为）
-                     session_knowledge_locked=bool(chat_info_dict.get('session_knowledge_locked', False)))
+                     # 兼容历史缓存：缺失字段视为未锁定 / 不持久化（沿用原有行为）
+                     session_knowledge_locked=bool(chat_info_dict.get('session_knowledge_locked', False)),
+                     persist_debug=bool(chat_info_dict.get('persist_debug', False)))
         c.chat_record_list = [ChatInfo.map_to_chat_record(c_r) for c_r in chat_info_dict.get('chat_record_list')]
         return c
 

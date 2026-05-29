@@ -140,6 +140,11 @@ class OpenView(APIView):
         knowledge_id_list_param = request.query_params.get('knowledge_id_list', None)
         if knowledge_id_list_param is not None:
             data['knowledge_id_list'] = [kid for kid in knowledge_id_list_param.split(',') if kid]
+        # 持久化调试会话：chat-entry 专用助手传 persist=true，使调试对话写入数据库、
+        # 可跨缓存续聊；不传则保持调试会话原有的「仅缓存、30 分钟过期」行为。
+        persist_param = request.query_params.get('persist', None)
+        if persist_param is not None:
+            data['persist'] = persist_param
         return result.success(OpenChatSerializers(data=data).open())
 
 

@@ -239,6 +239,9 @@ const props = withDefaults(
     // 会话级知识库隔离：调用方（chat-entry 等）传入则本次会话使用这些知识库；
     // 不传则沿用应用自身绑定的知识库（保持原 ApplicationSetting 调试对话行为）。
     knowledgeIdList?: string[]
+    // 持久化调试会话：debug-ai-chat 场景下传 true（chat-entry），调试对话写入数据库、
+    // 可跨缓存续聊；不传则保持调试会话「仅缓存」的原有行为。
+    persistSession?: boolean
   }>(),
   {
     applicationDetails: () => ({}),
@@ -484,8 +487,8 @@ const handleDebounceClick = debounce((val, other_params_data?: any, chat?: chatT
  */
 const openChatId: () => Promise<string> = () => {
   const obj = props.applicationDetails
-  // 第 3 个参数仅 debug 模式的 applicationApi.open 会读取；其他 open 实现忽略额外参数即可。
-  return getOpenChatAPI()(obj.id, undefined, props.knowledgeIdList)
+  // 第 3、4 个参数仅 debug 模式的 applicationApi.open 会读取；其他 open 实现忽略额外参数即可。
+  return getOpenChatAPI()(obj.id, undefined, props.knowledgeIdList, props.persistSession)
     .then((res) => {
       chartOpenId.value = res.data
       return res.data

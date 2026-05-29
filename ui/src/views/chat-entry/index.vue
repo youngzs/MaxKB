@@ -1,6 +1,6 @@
 <template>
   <div class="chat-entry" v-loading="loading">
-    <!-- 顶部工具栏：标题 + 知识库切换 + 新对话 -->
+    <!-- 顶部工具栏：标题 + 知识库切换 -->
     <div class="chat-entry__toolbar flex-between">
       <div class="flex align-center">
         <AppIcon iconName="app-user-chat" class="chat-entry__logo mr-8" />
@@ -38,14 +38,6 @@
             </div>
           </el-option>
         </el-select>
-        <el-button
-          class="ml-12"
-          :disabled="!backingApp"
-          @click="newChat"
-        >
-          <AppIcon iconName="app-create-chat" class="mr-4" />
-          {{ $t('views.chatEntry.newChat') }}
-        </el-button>
       </div>
     </div>
 
@@ -78,15 +70,58 @@
         </el-button>
       </el-empty>
 
-      <div v-else class="chat-entry__chat dialog-bg">
-        <AiChat
-          v-if="backingApp"
-          :key="chatSessionKey"
-          :applicationDetails="backingApp"
-          :appId="backingApp.id"
-          :knowledgeIdList="selectedKnowledgeIds"
-          type="debug-ai-chat"
-        />
+      <div v-else-if="backingApp" class="chat-entry__main flex">
+        <!-- 历史对话侧栏 -->
+        <div class="chat-entry__history">
+          <div class="chat-entry__history-head">
+            <el-button
+              type="primary"
+              plain
+              class="w-full"
+              @click="newChat"
+            >
+              <AppIcon iconName="app-create-chat" class="mr-4" />
+              {{ $t('views.chatEntry.newChat') }}
+            </el-button>
+          </div>
+          <div class="chat-entry__history-label">{{ $t('chat.history') }}</div>
+          <el-scrollbar class="chat-entry__history-list" v-loading="chatLogLoading">
+            <template v-if="displayChatList.length">
+              <div
+                v-for="item in displayChatList"
+                :key="item.id"
+                class="chat-entry__history-item"
+                :class="{ 'is-active': item.id === currentChatId }"
+                @click="selectChat(item)"
+              >
+                <div class="chat-entry__history-item-title ellipsis" :title="item.abstract">
+                  {{ item.abstract || $t('chat.createChat') }}
+                </div>
+                <div v-if="item.update_time" class="chat-entry__history-item-time">
+                  {{ datetimeFormat(item.update_time) }}
+                </div>
+              </div>
+            </template>
+            <div v-else-if="!chatLogLoading" class="chat-entry__history-empty">
+              <el-text type="info" size="small">{{ $t('chat.noHistory') }}</el-text>
+            </div>
+          </el-scrollbar>
+        </div>
+
+        <!-- 对话窗口 -->
+        <div class="chat-entry__chat dialog-bg">
+          <AiChat
+            :applicationDetails="backingApp"
+            :appId="backingApp.id"
+            :knowledgeIdList="selectedKnowledgeIds"
+            :record="currentRecordList"
+            :chatId="currentChatId"
+            :persist-session="true"
+            type="debug-ai-chat"
+            @refresh="onChatRefresh"
+            @scroll="handleChatScroll"
+          />
+        </div>
       </div>
     </div>
   </div>
@@ -97,10 +132,12 @@ import { computed, ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import AiChat from '@/components/ai-chat/index.vue'
 import ApplicationApi from '@/api/application/application'
+import ChatLogApi from '@/api/application/chat-log'
 import KnowledgeApi from '@/api/knowledge/knowledge'
 import ModelApi from '@/api/model/model'
 import useStore from '@/stores'
 import { t } from '@/locales'
+import { beforeDay, datetimeFormat, nowDate } from '@/utils/time'
 
 const router = useRouter()
 const { user } = useStore()
@@ -115,18 +152,39 @@ const DEDICATED_APP_NAME = '知识库问答助手'
 const KB_SELECTION_STORAGE_KEY = computed(
   () => `chat-entry:kb:${user.getWorkspaceId() || 'default'}`,
 )
+/** 新对话占位 id —— AiChat 约定：chatId='new' 时本次发送会先 open 再发消息 */
+const NEW_CHAT_ID = 'new'
 
 const loading = ref(false)
 const knowledgeList = ref<any[]>([])
 const selectedKnowledgeIds = ref<string[]>([])
 // 完整的应用详情对象，直接作为 AiChat 的 applicationDetails 传入
 const backingApp = ref<any>(null)
-// 改变 key 会重新挂载 AiChat —— 用于「新对话」和「切换知识库后重开会话」
-const chatSessionKey = ref(0)
+
+// 历史对话——后端持久化（persist 调试会话），列表与记录均从对话日志接口拉取
+const chatLogData = ref<any[]>([])
+const chatLogLoading = ref(false)
+// 当前会话 id：NEW_CHAT_ID 表示尚未开始的新对话
+const currentChatId = ref<string>(NEW_CHAT_ID)
+// 当前会话已加载的对话记录，作为 AiChat 的 record 传入
+const currentRecordList = ref<any[]>([])
+const recordLoading = ref(false)
+const recordPagination = ref({ current_page: 1, page_size: 20, total: 0 })
 
 const defaultPrompt = t('views.application.form.prompt.defaultPrompt', {
   data: '{data}',
   question: '{question}',
+})
+
+/**
+ * 侧栏展示用列表：处于新对话状态时，在顶部插入一个占位项，
+ * 让"新建对话"在发出第一条消息前也可见、可高亮。
+ */
+const displayChatList = computed<any[]>(() => {
+  if (currentChatId.value === NEW_CHAT_ID) {
+    return [{ id: NEW_CHAT_ID, abstract: t('chat.createChat') }, ...chatLogData.value]
+  }
+  return chatLogData.value
 })
 
 /**
@@ -187,8 +245,13 @@ function buildSimpleAppForm(modelId: string) {
     prologue: t('views.chatEntry.prologue'),
     knowledge_id_list: [] as string[],
     knowledge_setting: {
-      top_n: 5,
-      similarity: 0.5,
+      // top_n=5 对"企业知识库"这种几十段落的库太小 —— 一个多字段问题
+      // （如"公司概况"）需要同时命中执照/章程/征信/简历多份文档的段落，
+      // 5 段会被段落数最多的那份文档（如 41 段的征信报告）挤占。15 段
+      // ×~800 字 ≈ 12K 上下文，配 blend 模式召回更稳。similarity 0.5→0.3：
+      // 0.5 把很多 0.3-0.5 的真相关段落也滤掉了。
+      top_n: 15,
+      similarity: 0.3,
       max_paragraph_char_number: 5000,
       search_mode: 'blend',
       no_references_setting: {
@@ -243,19 +306,100 @@ async function ensureBackingApp() {
   backingApp.value = normalizeAppDetail(detail.data)
 }
 
+/** 拉取专用助手的全部历史会话（按更新时间倒序，由后端返回） */
+async function loadChatLogList() {
+  if (!backingApp.value) return
+  try {
+    const res: any = await ChatLogApi.getChatLog(
+      backingApp.value.id,
+      { current_page: 1, page_size: 100 },
+      // 对话日志接口要求传日期范围，这里取足够宽的窗口以涵盖全部历史
+      { start_time: beforeDay(3650), end_time: nowDate },
+      chatLogLoading,
+    )
+    chatLogData.value = Array.isArray(res?.data?.records) ? res.data.records : []
+  } catch (e) {
+    chatLogData.value = []
+  }
+}
+
 /**
- * 切换 / 关联知识库——会话级隔离：仅记忆到 localStorage 并重开 AiChat 会话；
- * 不修改应用的 knowledge_id_list 绑定。AiChat 会通过 knowledgeIdList prop
- * 把当前选择传给后端 open 接口，后端只对本次会话生效。
+ * 加载某个历史会话的对话记录。order_asc=true：分页接口按时间倒序返回，
+ * 即每页取较新的记录；向上翻页时把更旧的记录前插，最后按时间升序展示。
+ */
+function loadChatRecords(chatId: string) {
+  return ChatLogApi.getChatRecordLog(
+    backingApp.value.id,
+    chatId,
+    recordPagination.value,
+    recordLoading,
+    true,
+  ).then((res: any) => {
+    recordPagination.value.total = res?.data?.total || 0
+    const list = (res?.data?.records || []).map((v: any) => ({
+      ...v,
+      write_ed: true,
+      record_id: v.id,
+    }))
+    currentRecordList.value = [...list, ...currentRecordList.value].sort((a: any, b: any) =>
+      (a.create_time || '').localeCompare(b.create_time || ''),
+    )
+  })
+}
+
+/** 切换到某个历史会话 / 新对话 */
+function selectChat(item: any) {
+  if (item.id === currentChatId.value) return
+  if (item.id === NEW_CHAT_ID) {
+    newChat()
+    return
+  }
+  recordPagination.value.current_page = 1
+  recordPagination.value.total = 0
+  currentRecordList.value = []
+  currentChatId.value = item.id
+  loadChatRecords(item.id)
+}
+
+/** 开启一个新对话 */
+function newChat() {
+  recordPagination.value.current_page = 1
+  recordPagination.value.total = 0
+  currentRecordList.value = []
+  currentChatId.value = NEW_CHAT_ID
+}
+
+/**
+ * AiChat 在新对话发出首条消息、拿到真实 chat_id 后回调。
+ * 此时后端已落库本次会话——刷新侧栏让它出现在历史列表中。
+ */
+async function onChatRefresh(newChatId: string) {
+  currentChatId.value = newChatId
+  await loadChatLogList()
+}
+
+/** 对话区滚动到顶部时，向上加载更早的对话记录 */
+function handleChatScroll(event: any) {
+  if (
+    currentChatId.value !== NEW_CHAT_ID &&
+    event.scrollTop === 0 &&
+    recordPagination.value.total > currentRecordList.value.length
+  ) {
+    const prevHeight = event.dialogScrollbar.offsetHeight
+    recordPagination.value.current_page += 1
+    loadChatRecords(currentChatId.value).then(() => {
+      event.scrollDiv.setScrollTop(event.dialogScrollbar.offsetHeight - prevHeight)
+    })
+  }
+}
+
+/**
+ * 切换 / 关联知识库——会话级隔离：知识库变更必然意味着新的检索上下文，
+ * 因此直接开启一个新对话（旧会话仍保留在历史列表中可随时回看）。
  */
 function onKnowledgeChange(ids: string[]) {
   persistSelection(ids)
-  // 重新挂载 AiChat —— 触发新的 open 调用，后端按新的会话知识库列表初始化对话
-  chatSessionKey.value += 1
-}
-
-function newChat() {
-  chatSessionKey.value += 1
+  newChat()
 }
 
 function goModelManage() {
@@ -270,6 +414,7 @@ onMounted(async () => {
     const stored = loadStoredSelection()
     const available = new Set(knowledgeList.value.map((k) => k.id))
     selectedKnowledgeIds.value = stored.filter((id) => available.has(id))
+    await loadChatLogList()
   } finally {
     loading.value = false
   }
@@ -324,7 +469,79 @@ onMounted(async () => {
     box-sizing: border-box;
   }
 
+  &__main {
+    height: 100%;
+    gap: 16px;
+  }
+
+  &__history {
+    width: 260px;
+    flex-shrink: 0;
+    display: flex;
+    flex-direction: column;
+    background: var(--el-bg-color);
+    border: 1px solid var(--el-border-color-light);
+    border-radius: 8px;
+    box-sizing: border-box;
+    overflow: hidden;
+  }
+
+  &__history-head {
+    padding: 12px;
+  }
+
+  &__history-label {
+    padding: 0 16px 4px;
+    font-size: 12px;
+    color: var(--el-text-color-secondary);
+  }
+
+  &__history-list {
+    flex: 1;
+    min-height: 0;
+    padding: 4px 8px 8px;
+  }
+
+  &__history-item {
+    padding: 8px 12px;
+    margin-bottom: 2px;
+    border-radius: 6px;
+    cursor: pointer;
+
+    &:hover {
+      background: var(--el-fill-color-light);
+    }
+
+    &.is-active {
+      background: var(--el-color-primary-light-9);
+
+      .chat-entry__history-item-title {
+        color: var(--el-color-primary);
+        font-weight: 500;
+      }
+    }
+  }
+
+  &__history-item-title {
+    font-size: 14px;
+    color: var(--el-text-color-regular);
+    line-height: 20px;
+  }
+
+  &__history-item-time {
+    margin-top: 2px;
+    font-size: 12px;
+    color: var(--el-text-color-secondary);
+  }
+
+  &__history-empty {
+    padding: 24px 12px;
+    text-align: center;
+  }
+
   &__chat {
+    flex: 1;
+    min-width: 0;
     height: 100%;
     border-radius: 8px;
     background: var(--dialog-bg-gradient-color, var(--el-bg-color));

@@ -135,10 +135,39 @@ def get_post_handler(chat_info: ChatInfo):
 class DebugChatSerializers(serializers.Serializer):
     chat_id = serializers.UUIDField(required=True, label=_("Conversation ID"))
 
+    @staticmethod
+    def re_open_persisted_debug_chat(chat_id):
+        """缓存失效后，从数据库重建持久化调试会话的 ChatInfo。
+
+        调试会话的 ChatInfo 缓存默认 30 分钟 TTL。对 persist_debug 持久化的
+        调试会话（chat-entry 专用助手），Chat/ChatRecord 已落库，可据此重建，
+        使对话任何时间都能续聊。会话级知识库设置从 Chat.meta.session_setting 恢复。
+        """
+        chat = QuerySet(Chat).filter(id=chat_id).first()
+        if chat is None:
+            raise ChatException(500, _("Conversation does not exist"))
+        meta = chat.meta if isinstance(chat.meta, dict) else {}
+        session_setting = meta.get('session_setting') or {}
+        knowledge_id_list = session_setting.get('knowledge_id_list') or []
+        exclude_document_id_list = session_setting.get('exclude_document_id_list') or []
+        chat_info = ChatInfo(str(chat.id), chat.chat_user_id, chat.chat_user_type, chat.ip_address,
+                             chat.source, knowledge_id_list, exclude_document_id_list,
+                             str(chat.application_id), debug=True,
+                             session_knowledge_locked=bool(session_setting.get('session_knowledge_locked', False)),
+                             persist_debug=True)
+        chat_record_list = list(QuerySet(ChatRecord).filter(chat_id=chat_id).order_by('-create_time')[0:5])
+        chat_record_list.sort(key=lambda r: r.create_time)
+        for chat_record in chat_record_list:
+            chat_info.chat_record_list.append(chat_record)
+        chat_info.set_cache()
+        return chat_info
+
     def chat(self, instance: dict, base_to_response: BaseToResponse = SystemToResponse()):
         self.is_valid(raise_exception=True)
         chat_id = self.data.get('chat_id')
         chat_info: ChatInfo = ChatInfo.get_cache(chat_id)
+        if chat_info is None:
+            chat_info = self.re_open_persisted_debug_chat(chat_id)
         application = QuerySet(Application).filter(id=chat_info.application_id).first()
         chat_info.application = application
         return ChatSerializers(data={
@@ -541,6 +570,9 @@ class OpenChatSerializers(serializers.Serializer):
     knowledge_id_list = serializers.ListField(required=False, allow_null=True,
                                               child=serializers.CharField(allow_blank=True),
                                               label=_("Knowledge id list"))
+    # 持久化调试会话：debug=True 且 persist=True 时（chat-entry 专用助手），调试对话
+    # 也会写入数据库，使其可跨 30 分钟缓存续聊。不传则保持调试会话原有的「仅缓存」行为。
+    persist = serializers.BooleanField(required=False, default=False, label=_("Persist debug session"))
 
     def is_valid(self, *, raise_exception=False):
         super().is_valid(raise_exception=True)
@@ -579,7 +611,8 @@ class OpenChatSerializers(serializers.Serializer):
         chat_id = str(uuid.uuid7())
         ChatInfo(chat_id, chat_user_id, chat_user_type, ip_address, source, [],
                  [],
-                 application_id, debug).set_cache()
+                 application_id, debug,
+                 persist_debug=(debug and self.data.get('persist', False))).set_cache()
         return chat_id
 
     def open_simple(self, application):
@@ -616,7 +649,8 @@ class OpenChatSerializers(serializers.Serializer):
                       is_active=False)],
                  application_id,
                  debug=debug,
-                 session_knowledge_locked=(session_knowledge_id_list is not None)).set_cache()
+                 session_knowledge_locked=(session_knowledge_id_list is not None),
+                 persist_debug=(debug and self.data.get('persist', False))).set_cache()
         return chat_id
 
 
