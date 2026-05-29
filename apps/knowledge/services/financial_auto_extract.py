@@ -17,7 +17,7 @@ from typing import Iterable, List
 from django.db.models import QuerySet
 
 from knowledge.models import Document, DocumentTag, Paragraph, Tag
-from knowledge.services.financial_extractor import parse_table, persist
+from knowledge.services.financial_extractor import parse_document, parse_table, persist
 
 _TABLE_BLOCK_RE = re.compile(
     # 至少一个 markdown 表格行 + 分隔行 + 数据行
@@ -26,13 +26,38 @@ _TABLE_BLOCK_RE = re.compile(
 )
 
 
+def _strip_seq_prefix(name: str) -> str:
+    """去掉目录段常见的'数字、'/'数字.'前缀，如 '5、沛县千岛...' → '沛县千岛...'。"""
+    return re.sub(r'^\s*\d+\s*[、.\)）]\s*', '', name or '').strip()
+
+
 def _detect_default_entity(document: Document) -> str:
-    """从 Document.meta.path_segments 推断主体名（最后一个目录段往往是公司名）。"""
+    """从 Document.meta.path_segments 兜底推断主体名（公司名通常是最靠前的目录段）。
+    注意：模板感知解析会优先用表格里的'编制单位：'，这里只是兜底。"""
     meta = document.meta or {}
     segs = meta.get('path_segments') or []
-    if isinstance(segs, list) and len(segs) >= 2:
-        return segs[-2] or ''
+    if isinstance(segs, list) and segs:
+        # 取第一个像公司名的段（含'公司/有限/集团/中心/厂'），否则取首段
+        for seg in segs:
+            s = _strip_seq_prefix(seg)
+            if any(kw in s for kw in ('公司', '有限', '集团', '中心', '厂', '事务所', '医院', '学校')):
+                return s
+        return _strip_seq_prefix(segs[0])
     return ''
+
+
+def _detect_filename(document: Document) -> str:
+    """报表源文件名（path_segments 最后一段），用于年度兜底推断。"""
+    meta = document.meta or {}
+    segs = meta.get('path_segments') or []
+    if isinstance(segs, list) and segs:
+        return segs[-1] or ''
+    return document.name or ''
+
+
+def _ordered_paragraph_contents(document_id) -> List[str]:
+    return [c for c in QuerySet(Paragraph).filter(
+        document_id=document_id).order_by('position').values_list('content', flat=True) if c]
 
 
 def _has_financial_report_tag(knowledge_id, document_id) -> bool:
@@ -69,10 +94,22 @@ def auto_extract_financial(knowledge_id, documents: Iterable[Document]) -> int:
         try:
             if not _has_financial_report_tag(knowledge_id, doc.id):
                 continue
+            entity = _detect_default_entity(doc)
+            # —— 首选：文档级模板感知解析（国产财务软件导出的双栏+财务指标报表，
+            #     表头/期间/指标块常被分块打散，需整篇一起看）。
+            contents = _ordered_paragraph_contents(doc.id)
+            parsed_doc = parse_document(
+                contents, doc_name=doc.name, filename=_detect_filename(doc),
+                default_entity=entity) if contents else None
+            if parsed_doc is not None:
+                created, _facts = persist(
+                    doc, parsed_doc, raw_table_md='\n\n'.join(contents))
+                stmt_count += len(created)
+                continue
+            # —— 回退：旧的逐表格解析（兼容非该模板的报表）。
             md_tables = _extract_tables_from_paragraphs(doc.id)
             if not md_tables:
                 continue
-            entity = _detect_default_entity(doc)
             for md in md_tables:
                 parsed = parse_table(md, default_entity=entity)
                 if parsed is None:

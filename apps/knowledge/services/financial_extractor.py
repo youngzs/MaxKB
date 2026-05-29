@@ -272,6 +272,231 @@ def _parse_number(token: str) -> Optional[Decimal]:
     return value
 
 
+# ===================================================================
+# 模板感知解析（国产财务软件导出的资产负债表/利润表/现金流量表）
+# -------------------------------------------------------------------
+# 这类报表特征：一张超宽表把"资产 | 负债和所有者权益 | 财务指标"三栏并排，
+# 表头标题被铺满所有单元格（"资产负债表 | 资产负债表 | ... | col9..col15"），
+# 且常被 OCR/分块拆到多个段落里。语义列由含"序号"的表头行决定，年度由
+# "YYYY年度 / YYYY-12-31 / 文件名"推断。期末列=报告年度，年初/期初列=上一年度。
+# ===================================================================
+
+# 衍生财务指标别名（比率类，不在资产/负债科目别名表里）
+_INDICATOR_ALIASES = {
+    '资产负债率': '资产负债率', '产权比例': '产权比例',
+    '流动比例': '流动比率', '流动比率': '流动比率',
+    '速动比例': '速动比率', '速动比率': '速动比率',
+    '营业利润率': '营业利润率', '净资产收益率': '净资产收益率',
+    '总资产利润率': '总资产利润率', '总资产报酬率': '总资产利润率',
+    '总资产增长率': '总资产增长率', '应收账款周转率': '应收账款周转率',
+    '存货周转率': '存货周转率', '毛利率': '毛利率',
+}
+
+# 退化标题行：所有非空单元格都是"资 产 负 债 表"/"利 润 表"/"现金流量表"或"colN"
+_TITLE_NOISE_RE = re.compile(
+    r'^[\s　]*(资\s*产\s*负\s*债\s*表|利\s*润\s*表|现\s*金\s*流\s*量\s*表)[\s　]*$')
+_COLN_RE = re.compile(r'^col\d+$')
+# 表尾签名行
+_FOOTER_TOKENS = ('单位负责人', '财务负责人', '制表人', '复核', '审核')
+
+
+def _md_rows_from_contents(contents: List[str]) -> List[List[str]]:
+    """把文档若干段落里的所有 markdown 表格行抽出，去分隔行/退化标题行。"""
+    rows: List[List[str]] = []
+    for content in contents:
+        for line in (content or '').splitlines():
+            s = line.strip()
+            if not s.startswith('|'):
+                continue
+            s = s.strip('|')
+            if re.match(r'^[\s:\-|]+$', s):  # |---|---| 分隔行
+                continue
+            cells = [c.strip() for c in s.split('|')]
+            nonempty = [c for c in cells if c]
+            if nonempty and all(_TITLE_NOISE_RE.match(c) or _COLN_RE.match(c) for c in nonempty):
+                continue  # 退化标题行
+            rows.append(cells)
+    return rows
+
+
+def _infer_reporting_year(rows: List[List[str]], filename: str = '') -> Optional[int]:
+    """报告年度推断：YYYY年度 > YYYY-12-31 / YYYY年12月31日 > 文件名里的 YYYY。"""
+    blob = '\n'.join('|'.join(r) for r in rows)
+    m = re.search(r'(20\d{2})\s*年度', blob)
+    if m:
+        return int(m.group(1))
+    m = re.search(r'(20\d{2})\s*[-./年]\s*12\s*[-./月]\s*31', blob)
+    if m:
+        return int(m.group(1))
+    m = re.search(r'(20\d{2})', filename or '')
+    if m:
+        return int(m.group(1))
+    return None
+
+
+def _infer_entity(rows: List[List[str]], default: str = '') -> str:
+    """主体名：'编制单位：XXX' > '单位名称' 邻格 > default。"""
+    for r in rows:
+        for c in r:
+            m = re.search(r'编制单位[:：]\s*(\S.+?)\s*$', c or '')
+            if m:
+                return m.group(1).strip()
+    for r in rows:
+        for i, c in enumerate(r):
+            if (c or '').strip() == '单位名称' and i + 1 < len(r) and r[i + 1].strip():
+                return r[i + 1].strip()
+    return default
+
+
+def _is_footer(item: str) -> bool:
+    return any(tok in item for tok in _FOOTER_TOKENS)
+
+
+def _detect_doc_statement_type(contents: List[str], doc_name: str = '') -> Optional[str]:
+    blob = (doc_name or '') + '\n' + '\n'.join(contents)
+    if '资产负债表' in blob or '负债和所有者权益' in blob:
+        return 'balance_sheet'
+    if '利润表' in blob or '营业收入' in blob or '净利润' in blob:
+        return 'income_statement'
+    if '现金流量表' in blob or '经营活动产生的现金流量' in blob:
+        return 'cash_flow'
+    return None
+
+
+def _add_fact(facts, seen, item_clean, normalized, period, value):
+    """加入一条 fact，按 (normalized, period) 去重（保留首个非空）。"""
+    if value is None:
+        return
+    key = (normalized, period)
+    if key in seen:
+        return
+    seen[key] = True
+    facts.append(ParsedFact(line_item=item_clean, line_item_normalized=normalized,
+                            period=period, value=value))
+
+
+def _parse_balance_sheet_template(rows, year, unit) -> List[ParsedFact]:
+    """双栏(资产/负债)+财务指标 的资产负债表。返回 facts(period=year 末 / year-1 初)。"""
+    hdr_idx = None
+    for i, r in enumerate(rows):
+        if '序号' in r and ('期末余额' in r or '年初余额' in r):
+            hdr_idx = i
+            break
+    if hdr_idx is None:
+        return []
+    hdr = rows[hdr_idx]
+    seq_idx = [j for j, c in enumerate(hdr) if c == '序号']
+    regions = []  # (item_col, end_col, begin_col)
+    for s in seq_idx:
+        regions.append((s - 1, s + 1, s + 2))
+    ind_region = None
+    if '财务指标' in hdr:
+        fi = hdr.index('财务指标')
+        ind_region = (fi, fi + 1, fi + 2)
+    end_p, begin_p = str(year), str(year - 1)
+    facts: List[ParsedFact] = []
+    seen = {}
+    seen_ind = {}
+    for r in rows[hdr_idx + 1:]:
+        for (ci, ce, cb) in regions:
+            if ci < 0 or ci >= len(r):
+                continue
+            raw = r[ci]
+            if not raw or _is_footer(raw):
+                continue
+            clean, _ind = _normalize_line_item(raw)
+            if not clean or _is_footer(clean) or clean in ('资产', '负债和所有者权益'):
+                continue
+            normalized = _normalize_to_alias(clean)
+            _add_fact(facts, seen, clean, normalized, end_p,
+                      _parse_number(r[ce]) if ce < len(r) else None)
+            _add_fact(facts, seen, clean, normalized, begin_p,
+                      _parse_number(r[cb]) if cb < len(r) else None)
+        if ind_region:
+            ii, ie, ib = ind_region
+            if ii < len(r):
+                iname = (r[ii] or '').strip()
+                if iname in _INDICATOR_ALIASES:
+                    inorm = _INDICATOR_ALIASES[iname]
+                    _add_fact(facts, seen_ind, iname, inorm, end_p,
+                              _parse_number(r[ie]) if ie < len(r) else None)
+                    _add_fact(facts, seen_ind, iname, inorm, begin_p,
+                              _parse_number(r[ib]) if ib < len(r) else None)
+    return facts
+
+
+def _parse_single_column_template(rows, year, statement_type) -> List[ParsedFact]:
+    """利润表/现金流量表：科目 + 序号 + 本年累计金额/本期金额(年度值)。"""
+    value_keys = ('本年累计金额', '本期金额', '本年金额', '本期发生额', '本年数', '金额')
+    hdr_idx, val_col = None, None
+    for i, r in enumerate(rows):
+        if '序号' in r:
+            for k in value_keys:
+                if k in r:
+                    hdr_idx, val_col = i, r.index(k)
+                    break
+        if hdr_idx is not None:
+            break
+    if hdr_idx is None:
+        return []
+    hdr = rows[hdr_idx]
+    item_col = hdr.index('序号') - 1
+    if item_col < 0:
+        item_col = 0
+    facts: List[ParsedFact] = []
+    seen = {}
+    for r in rows[hdr_idx + 1:]:
+        if item_col >= len(r):
+            continue
+        raw = r[item_col]
+        if not raw or _is_footer(raw):
+            continue
+        clean, _ind = _normalize_line_item(raw)
+        if not clean or _is_footer(clean):
+            continue
+        normalized = _normalize_to_alias(clean)
+        _add_fact(facts, seen, clean, normalized, str(year),
+                  _parse_number(r[val_col]) if val_col < len(r) else None)
+    return facts
+
+
+def parse_document(contents: List[str], doc_name: str = '', filename: str = '',
+                   default_entity: str = '') -> Optional[ParsedStatement]:
+    """文档级模板感知解析。把一篇报表文档(可能跨多段落/多分块)整体解析成
+    一个 ParsedStatement(期末=报告年度, 年初=上一年度; 含衍生财务指标)。
+    识别不出标准模板时返回 None，由调用方回退到旧的 parse_table。"""
+    rows = _md_rows_from_contents(contents)
+    if len(rows) < 2:
+        return None
+    statement_type = _detect_doc_statement_type(contents, doc_name)
+    if not statement_type:
+        return None
+    year = _infer_reporting_year(rows, filename)
+    if year is None:
+        return None
+    full_text = '\n'.join('|'.join(r) for r in rows)
+    unit = _detect_unit(full_text)
+    entity = _infer_entity(rows, default_entity)
+
+    if statement_type == 'balance_sheet':
+        facts = _parse_balance_sheet_template(rows, year, unit)
+        periods = [str(year), str(year - 1)]
+    else:
+        facts = _parse_single_column_template(rows, year, statement_type)
+        periods = [str(year)]
+    if not facts:
+        return None
+    periods = [p for p in periods if any(f.period == p for f in facts)]
+    return ParsedStatement(
+        statement_type=statement_type,
+        entity_name=entity or '',
+        unit=unit,
+        periods=periods,
+        period_type='annual',
+        facts=facts,
+    )
+
+
 # ------------------------- 主解析逻辑 -------------------------
 
 def parse_table(md_table: str, default_entity: str = '',
