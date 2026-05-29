@@ -101,14 +101,18 @@ class XlsSplitHandle(BaseSplitHandle):
             workbook = xlrd.open_workbook(file_contents=buffer)
             worksheets = workbook.sheets()
             worksheets_size = len(worksheets)
+            base_name = file.name.rsplit('.', 1)[0] if '.' in file.name else file.name
             results = []
             for sheet in worksheets:
                 # paragraph 内的「文件：xxx」始终用真实文件名（见 xlsx_split_handle 同段说明）
                 sheet_result = handle_sheet(file.name, workbook, sheet, limit)
                 if worksheets_size == 1 and sheet.name == 'Sheet1':
                     sheet_result['name'] = file.name
-                else:
+                elif worksheets_size == 1:
                     sheet_result['name'] = sheet.name
+                else:
+                    # 多 sheet：拼上工作簿文件名以区分来源(公司/年度)，详见 xlsx_split_handle
+                    sheet_result['name'] = f"{base_name} - {sheet.name}"
                 results.append(sheet_result)
             return [r for r in results if r is not None]
         except Exception as e:

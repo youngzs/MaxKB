@@ -158,15 +158,24 @@ class XlsxSplitHandle(BaseSplitHandle):
             # （名字常见为 "1"/"2"/"详细附注"），这些不应进入知识库。
             worksheets = [s for s in workbook.worksheets if s.sheet_state == 'visible']
             worksheets_size = len(worksheets)
+            # 工作簿文件名(去扩展名)——多 sheet 拆分时拼到文档名上，
+            # 因为 sheet 名(如"资产负债表"/"利润表")在多份同结构工作簿间重复，
+            # 单看 sheet 名无法区分公司/年度(信息恰在文件名里)。
+            base_name = file.name.rsplit('.', 1)[0] if '.' in file.name else file.name
             results = []
             for sheet in worksheets:
                 # paragraph 内的「文件：xxx」始终用真实文件名，与文档拆分名解耦
                 sheet_result = handle_sheet(file.name, sheet, image_dict, limit)
-                # 多 sheet 工作簿时，仍按 sheet 名拆分为多文档（保留原行为）
                 if worksheets_size == 1 and sheet.title == 'Sheet1':
+                    # 单 sheet 且默认名：用文件名作为文档名（保留原行为）
                     sheet_result['name'] = file.name
-                else:
+                elif worksheets_size == 1:
+                    # 单 sheet 具名：sheet 名即文档主题（保留原行为）
                     sheet_result['name'] = sheet.title
+                else:
+                    # 多 sheet：拼上文件名以区分来源工作簿（公司/年度），
+                    # 形如「千岛…-2025财报(5) - 资产负债表」
+                    sheet_result['name'] = f"{base_name} - {sheet.title}"
                 results.append(sheet_result)
             return [r for r in results if r is not None]
         except Exception as e:
