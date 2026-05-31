@@ -15,6 +15,7 @@
 """
 import datetime
 import os
+import re
 from typing import List, Optional
 
 from common.utils.markdown_table import chunk_markdown_table
@@ -61,6 +62,8 @@ def make_markdown_table_paragraphs(
     non_empty_rows = [row for row in rows if _has_any_value(row)]
     if not non_empty_rows:
         return []
+    # 裁掉占位且全空的尾列/中间列，防止宽 Excel 的几百个空列造成字符爆炸
+    norm_headers, non_empty_rows = _prune_placeholder_empty_columns(norm_headers, non_empty_rows)
     chunks = chunk_markdown_table(norm_headers, non_empty_rows, title=title)
     paragraphs = []
     for idx, chunk in enumerate(chunks, start=1):
@@ -122,6 +125,43 @@ def _has_any_value(values: List) -> bool:
             continue
         return True
     return False
+
+
+_PLACEHOLDER_HEADER_RE = re.compile(r'^col\d+$')
+
+
+def _is_placeholder_header(h) -> bool:
+    """表头是否为占位（空 / colN）—— 占位即"原表头就是空单元格"。"""
+    if h is None:
+        return True
+    s = str(h).strip()
+    return s == '' or _PLACEHOLDER_HEADER_RE.match(s) is not None
+
+
+def _prune_placeholder_empty_columns(headers: List[str], rows: List[list]):
+    """裁掉「表头为占位(colN/空) 且 整列数据全空」的列。
+
+    财务报表 Excel 常被人为拉宽几百个空列(col1..col300)，不裁会导致每行铺满
+    ` | | | ` 造成字符爆炸(单 sheet 十几万字符)、污染检索并拖慢向量化。
+    只裁"占位表头 + 全列空"的列：有真实表头的列即便数据空也保留(语义安全)。
+    """
+    n = len(headers)
+    if n == 0:
+        return headers, rows
+    col_has_value = [False] * n
+    for row in rows:
+        for i in range(min(len(row), n)):
+            v = row[i]
+            if v is not None and not (isinstance(v, str) and v.strip() == ''):
+                col_has_value[i] = True
+    keep = [i for i in range(n)
+            if col_has_value[i] or not _is_placeholder_header(headers[i])]
+    # 全裁光(异常情形)则原样返回，避免产出空表
+    if not keep or len(keep) == n:
+        return headers, rows
+    new_headers = [headers[i] for i in keep]
+    new_rows = [[(row[i] if i < len(row) else '') for i in keep] for row in rows]
+    return new_headers, new_rows
 
 
 def make_kv_paragraph(
