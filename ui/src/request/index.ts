@@ -223,6 +223,31 @@ export const postStream: (url: string, data?: unknown) => Promise<Result<any> | 
   })
 }
 
+/**
+ * 流处理（multipart/FormData 版）—— 用于文件上传类的流式接口（如文档分段预览）。
+ * 不显式设置 Content-Type，让浏览器自动带上 multipart boundary。
+ * @param url       完整 url（需自带 baseURL，如 /admin/api/...）
+ * @param formData  FormData
+ */
+export const postStreamForm: (url: string, formData: FormData) => Promise<Response> = (
+  url,
+  formData,
+) => {
+  const { user, login } = useStore()
+  const token = login.getToken()
+  const language = user.getLanguage()
+  const headers: HeadersInit = {}
+  if (token) {
+    headers['AUTHORIZATION'] = `Bearer ${token}`
+  }
+  headers['Accept-Language'] = `${language}`
+  return fetch(url, {
+    method: 'POST',
+    body: formData,
+    headers: headers,
+  })
+}
+
 export const exportExcel: (
   fileName: string,
   url: string,

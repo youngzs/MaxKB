@@ -7,6 +7,7 @@ import {
   exportFilePost,
   get,
   post,
+  postStreamForm,
   put
 } from '@/request/index'
 import type { Ref } from 'vue'
@@ -476,6 +477,23 @@ const postSplitDocument: (knowledge_id: string, data: any) => Promise<Result<any
 }
 
 /**
+ * 分段预览（流式 SSE 版）—— 逐文件返回进度，避免大文件/OCR 触发反代 504。
+ * 返回原生 fetch Response，由调用方读流（data: {...}\n\n）。
+ * @param knowledge_id 知识库 id
+ * @param data         FormData（file[]/relative_paths[]/patterns/limit/with_filter）
+ */
+export const postSplitDocumentStream: (
+  knowledge_id: string,
+  data: FormData,
+) => Promise<Response> = (knowledge_id, data) => {
+  const base = (window.MaxKB?.prefix ? window.MaxKB?.prefix : '/admin') + '/api'
+  return postStreamForm(
+    `${base}${prefix.value}/${knowledge_id}/document/split?stream=1`,
+    data,
+  )
+}
+
+/**
  * 分段标识列表
  * @param loading 加载器
  * @returns 分段标识列表
@@ -681,6 +699,7 @@ export default {
   putMigrateMulDocument,
   postQADocument,
   postSplitDocument,
+  postSplitDocumentStream,
   listSplitPattern,
   postTableDocument,
   exportQATemplate,

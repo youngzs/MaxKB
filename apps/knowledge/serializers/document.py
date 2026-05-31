@@ -1112,6 +1112,58 @@ class DocumentSerializers(serializers.Serializer):
                 results.extend(parsed)
             return results
 
+        def parse_stream(self, instance):
+            """流式分段:逐文件处理,每个文件 yield 一条进度 SSE,最后 yield 完整结果。
+
+            解决多文件/大文件 + 在线 OCR 导致的反代 504 —— 每个文件完成都向客户端
+            写一条数据,持续刷新反代读超时(连接保持),并给前端实时进度。
+            单文件解析失败不中断整批:报错并继续,其余文件照常返回。
+            """
+            import json as _json
+            from django.core.serializers.json import DjangoJSONEncoder
+
+            def _sse(obj):
+                # DjangoJSONEncoder 处理 UUID/datetime/Decimal —— paragraph 的
+                # source_file_id 是 UUID，标准 json.dumps 无法序列化。
+                return 'data: ' + _json.dumps(obj, ensure_ascii=False,
+                                              cls=DjangoJSONEncoder) + '\n\n'
+
+            try:
+                self.is_valid(instance=instance, raise_exception=True)
+                DocumentSplitRequest(data=instance).is_valid(raise_exception=True)
+            except Exception as e:
+                yield _sse({'code': 500, 'message': getattr(e, 'message', str(e))})
+                return
+
+            file_list = instance.get("file")
+            relative_paths = instance.get("relative_paths") or []
+            total = len(file_list)
+            results = []
+            for idx, f in enumerate(file_list):
+                filename = getattr(f, 'name', '') or ''
+                yield _sse({'progress': {'current': idx, 'total': total,
+                                         'filename': filename, 'stage': 'processing'}})
+                try:
+                    rel = relative_paths[idx] if idx < len(relative_paths) else ''
+                    parsed = self.file_to_paragraph(
+                        f, instance.get("patterns", None),
+                        instance.get("with_filter", None), instance.get("limit", 4096))
+                    if rel:
+                        segs = [s for s in rel.replace('\\', '/').split('/') if s]
+                        for item in parsed:
+                            meta = dict(item.get('meta') or {})
+                            meta['relative_path'] = rel
+                            meta['path_segments'] = segs
+                            item['meta'] = meta
+                    results.extend(parsed)
+                    yield _sse({'progress': {'current': idx + 1, 'total': total,
+                                             'filename': filename, 'stage': 'done'}})
+                except Exception as e:
+                    yield _sse({'progress': {'current': idx + 1, 'total': total,
+                                             'filename': filename, 'stage': 'error',
+                                             'message': getattr(e, 'message', str(e))}})
+            yield _sse({'code': 200, 'data': results})
+
         def save_image(self, image_list):
             if image_list is not None and len(image_list) > 0:
                 exist_image_list = [str(i.get('id')) for i in

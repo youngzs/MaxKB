@@ -110,7 +110,7 @@
       </el-col>
 
       <el-col :span="14" class="p-24 border-l">
-        <div v-loading="loading">
+        <div v-loading="loading" :element-loading-text="progressText">
           <h4 class="title-decoration-1 mb-8">{{ $t('views.document.setRules.title.preview') }}</h4>
 
           <!-- 扫描版/CID 乱码 PDF 在预览阶段 0 段是正常的:这些文件需要 OCR 异步重抽,
@@ -145,6 +145,7 @@ import { cutFilename } from '@/utils/common'
 import useStore from '@/stores'
 import type { KeyValue } from '@/api/type/common'
 import { loadSharedApi } from '@/utils/dynamics-api/shared-api'
+import { postSplitDocumentStream } from '@/api/knowledge/document'
 const { knowledge } = useStore()
 const documentsFiles = computed(() => knowledge.documentsFiles)
 const splitPatternList = ref<Array<KeyValue<string, string>>>([])
@@ -165,6 +166,7 @@ const apiType = computed(() => {
 
 const radio = ref('1')
 const loading = ref(false)
+const progressText = ref('')
 const paragraphList = ref<any[]>([])
 
 // 是否有文档预览为空段 —— 扫描件 / CID 乱码 PDF / 图片走 OCR 异步路径,
@@ -216,8 +218,79 @@ function changeHandle(val: boolean) {
     firstChecked.value = false
   }
 }
+// 应用分段结果到预览（裁剪超长文件名 + 关联问题）
+function applySplitResult(list: any[]) {
+  list.map((item: any) => {
+    if (item.name.length > 128) {
+      item.name = cutFilename(item.name, 128)
+    }
+    if (checkedConnect.value) {
+      item.content.map((v: any) => {
+        v['problem_list'] = v.title.trim() ? [{ content: v.title.trim() }] : []
+      })
+    }
+  })
+  paragraphList.value = list
+}
+
+// 原同步分段：共享/资源管理场景使用，也是流式失败时的回退路径
+function legacySplit(fd: FormData) {
+  loadSharedApi({ type: 'document', systemType: apiType.value })
+    .postSplitDocument(id, fd)
+    .then((res: any) => {
+      applySplitResult(res.data)
+      loading.value = false
+      progressText.value = ''
+    })
+    .catch(() => {
+      loading.value = false
+      progressText.value = ''
+    })
+}
+
+// 读取 SSE 流：逐文件进度 + 末尾完整结果。返回最终分段 list。
+async function readSplitStream(response: any): Promise<any[]> {
+  if (!response || !response.body) {
+    throw new Error('no stream body')
+  }
+  const reader = response.body.getReader()
+  const decoder = new TextDecoder('utf-8')
+  let buf = ''
+  let finalList: any[] | null = null
+  let errMsg = ''
+  while (true) {
+    const { done, value } = await reader.read()
+    if (done) break
+    buf += decoder.decode(value, { stream: true })
+    const parts = buf.split('\n\n')
+    buf = parts.pop() || '' // 末段可能不完整，留待下一块
+    for (const part of parts) {
+      const line = part.trim()
+      if (!line.startsWith('data:')) continue
+      let obj: any
+      try {
+        obj = JSON.parse(line.slice(5).trim())
+      } catch (e) {
+        continue
+      }
+      if (obj.progress) {
+        const p = obj.progress
+        progressText.value =
+          '正在解析 ' + p.current + '/' + p.total + (p.filename ? '：' + p.filename : '')
+      } else if (obj.code === 500) {
+        errMsg = obj.message || 'split failed'
+      } else if (obj.data) {
+        finalList = obj.data
+      }
+    }
+  }
+  if (errMsg) throw new Error(errMsg)
+  return finalList || []
+}
+
 function splitDocument() {
   loading.value = true
+  progressText.value = ''
   const fd = new FormData()
   // 与 file[] 等长追加 relative_paths[]。webkitdirectory 模式下
   // file.raw.webkitRelativePath 形如 '借款人资料/盐城市保安服务有限公司/营业执照.pdf'；
@@ -238,33 +311,28 @@ function splitDocument() {
       }
     })
   }
-  loadSharedApi({ type: 'document', systemType: apiType.value })
-    .postSplitDocument(id, fd)
-    .then((res: any) => {
-      const list = res.data
-
-      list.map((item: any) => {
-        if (item.name.length > 128) {
-          item.name = cutFilename(item.name, 128)
-        }
-        if (checkedConnect.value) {
-          item.content.map((v: any) => {
-            v['problem_list'] = v.title.trim()
-              ? [
-                  {
-                    content: v.title.trim(),
-                  },
-                ]
-              : []
-          })
-        }
-      })
-
-      paragraphList.value = list
+  // workspace 知识库上传走流式 SSE（实时进度 + 防反代 504）；
+  // 共享/资源管理场景接口前缀不同，沿用原同步；流式异常自动回退同步。
+  if (apiType.value !== 'workspace') {
+    legacySplit(fd)
+    return
+  }
+  postSplitDocumentStream(id, fd)
+    .then((response: any) => {
+      if (response.status && response.status >= 400) {
+        throw new Error('split http ' + response.status)
+      }
+      return readSplitStream(response)
+    })
+    .then((list: any[]) => {
+      applySplitResult(list)
       loading.value = false
+      progressText.value = ''
     })
     .catch(() => {
-      loading.value = false
+      // 流式失败 → 回退同步分段，保证功能不退化
+      progressText.value = ''
+      legacySplit(fd)
     })
 }
 

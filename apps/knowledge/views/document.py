@@ -201,10 +201,20 @@ class DocumentView(APIView):
             # 旧的"单文件上传"调用方不传也兼容。
             if 'relative_paths' in request_data:
                 split_data['relative_paths'] = request_data.getlist('relative_paths')
-            return result.success(DocumentSerializers.Split(data={
+            serializer = DocumentSerializers.Split(data={
                 'workspace_id': workspace_id,
                 'knowledge_id': knowledge_id,
-            }).parse(split_data))
+            })
+            # stream=1 时走 SSE 流式分段:逐文件吐进度,持续刷新反代读超时、避免 504。
+            # 不传 stream 时保持原同步 JSON 返回(向后兼容旧前端)。
+            # stream 既支持 URL query(?stream=1)也支持 form 字段。
+            _stream_flag = request.query_params.get('stream')
+            if _stream_flag is None:
+                _stream_flag = request_data.get('stream', '')
+            if str(_stream_flag).lower() in ('1', 'true'):
+                from application.flow.tools import to_stream_response_simple
+                return to_stream_response_simple(serializer.parse_stream(split_data))
+            return result.success(serializer.parse(split_data))
 
     class SplitPattern(APIView):
         authentication_classes = [TokenAuth]
