@@ -319,18 +319,35 @@ def _md_rows_from_contents(contents: List[str]) -> List[List[str]]:
     return rows
 
 
-def _infer_reporting_year(rows: List[List[str]], filename: str = '') -> Optional[int]:
-    """报告年度推断：YYYY年度 > YYYY-12-31 / YYYY年12月31日 > 文件名里的 YYYY。"""
+def _infer_reporting_year(rows: List[List[str]], doc_name: str = '',
+                          filename: str = '') -> Optional[int]:
+    """报告年度推断（多模板鲁棒）：
+
+    优先级：内容里的 'YYYY年度' > 内容报告日期 'YYYY-12-xx / YYYY年12月' >
+    sheet 名(doc_name 的 ' - ' 之后，如 '202512资产负债表'/'2023.12利润表') 里的
+    YYYYMM/YYYY > 文件名里的 YYYY。
+    多 sheet 工作簿里源文件名常含多个年份(如 '...202212-202512.xlsx')，所以
+    sheet 名比文件名更可靠 —— 取 doc_name 末段优先。
+    """
     blob = '\n'.join('|'.join(r) for r in rows)
     m = re.search(r'(20\d{2})\s*年度', blob)
     if m:
         return int(m.group(1))
-    m = re.search(r'(20\d{2})\s*[-./年]\s*12\s*[-./月]\s*31', blob)
+    # 报告日期：YYYY-12-31 / YYYY-12-01 / YYYY年12月... (12 月即年报)
+    m = re.search(r'(20\d{2})\s*[-./年]\s*12\b', blob)
     if m:
         return int(m.group(1))
-    m = re.search(r'(20\d{2})', filename or '')
-    if m:
-        return int(m.group(1))
+    # sheet 名(' - ' 之后) > doc_name 整体 > 文件名；先认 YYYYMM/YYYY.MM 再认 YYYY
+    sheet = doc_name.split(' - ')[-1] if doc_name else ''
+    for src in (sheet, doc_name, filename):
+        if not src:
+            continue
+        m = re.search(r'(20\d{2})\.?(?:0[1-9]|1[0-2])\b', src)
+        if m:
+            return int(m.group(1))
+        m = re.search(r'(20\d{2})', src)
+        if m:
+            return int(m.group(1))
     return None
 
 
@@ -375,28 +392,63 @@ def _add_fact(facts, seen, item_clean, normalized, period, value):
                             period=period, value=value))
 
 
+def _find_period_col(hdr, start, end, keywords):
+    """在 hdr[start:end] 范围内找首个含任一关键词的列，返回列号或 None。"""
+    for k in range(start, min(end, len(hdr))):
+        cell = (hdr[k] or '')
+        if any(kw in cell for kw in keywords):
+            return k
+    return None
+
+
+# 列头里"期末/年初"的各种写法（不同财务软件模板）
+_END_COL_KEYS = ('期末余额', '期末数', '期末', '年末余额', '年末数', '年末')
+_BEGIN_COL_KEYS = ('年初余额', '年初数', '年初', '期初余额', '期初数', '期初', '上年')
+# 行号列的各种写法（不同财务软件模板）：序号 / 行次 / 行数
+_SEQ_NAMES = ('序号', '行次', '行数')
+
+
 def _parse_balance_sheet_template(rows, year, unit) -> List[ParsedFact]:
-    """双栏(资产/负债)+财务指标 的资产负债表。返回 facts(period=year 末 / year-1 初)。"""
+    """双栏(资产/负债)资产负债表，动态定位期末/年初列。
+
+    兼容多种模板：表头列名可为 '序号' 或 '行次'，期末列可为 '期末余额/期末数/期末'，
+    年初列可为 '年初余额/年初数/年初/期初'，且两列先后顺序不固定（动态按关键词定位）。
+    期末列 → 报告年度(year)，年初列 → 上一年度(year-1)。
+    含右侧"财务指标"块时一并抽取衍生指标（资产负债率等，部分模板无此块）。
+    """
     hdr_idx = None
     for i, r in enumerate(rows):
-        if '序号' in r and ('期末余额' in r or '年初余额' in r):
+        has_seq = any((c or '').strip() in _SEQ_NAMES for c in r)
+        has_period = any(any(kw in (c or '') for kw in (_END_COL_KEYS + _BEGIN_COL_KEYS)) for c in r)
+        if has_seq and has_period:
             hdr_idx = i
             break
     if hdr_idx is None:
         return []
     hdr = rows[hdr_idx]
-    seq_idx = [j for j, c in enumerate(hdr) if c == '序号']
+    # 对每个 序号/行次 列：科目列=其左邻；期末/年初列=其右侧若干列里按关键词定位
     regions = []  # (item_col, end_col, begin_col)
-    for s in seq_idx:
-        regions.append((s - 1, s + 1, s + 2))
+    for j, c in enumerate(hdr):
+        if (c or '').strip() not in _SEQ_NAMES:
+            continue
+        end_col = _find_period_col(hdr, j + 1, j + 5, _END_COL_KEYS)
+        begin_col = _find_period_col(hdr, j + 1, j + 5, _BEGIN_COL_KEYS)
+        if j - 1 >= 0 and (end_col is not None or begin_col is not None):
+            regions.append((j - 1, end_col, begin_col))
+    if not regions:
+        return []
+    # 财务指标块（可选）
     ind_region = None
     if '财务指标' in hdr:
         fi = hdr.index('财务指标')
-        ind_region = (fi, fi + 1, fi + 2)
+        ie = _find_period_col(hdr, fi + 1, fi + 5, _END_COL_KEYS + ('期末',))
+        ib = _find_period_col(hdr, fi + 1, fi + 5, _BEGIN_COL_KEYS + ('期初',))
+        ind_region = (fi, ie, ib)
     end_p, begin_p = str(year), str(year - 1)
     facts: List[ParsedFact] = []
     seen = {}
     seen_ind = {}
+    _SKIP_ITEMS = ('资产', '资 产', '负债和所有者权益', '负债和所有者权益(或股东权益)')
     for r in rows[hdr_idx + 1:]:
         for (ci, ce, cb) in regions:
             if ci < 0 or ci >= len(r):
@@ -405,32 +457,38 @@ def _parse_balance_sheet_template(rows, year, unit) -> List[ParsedFact]:
             if not raw or _is_footer(raw):
                 continue
             clean, _ind = _normalize_line_item(raw)
-            if not clean or _is_footer(clean) or clean in ('资产', '负债和所有者权益'):
+            if not clean or _is_footer(clean) or re.sub(r'\s+', '', clean) in [re.sub(r'\s+', '', s) for s in _SKIP_ITEMS]:
                 continue
             normalized = _normalize_to_alias(clean)
-            _add_fact(facts, seen, clean, normalized, end_p,
-                      _parse_number(r[ce]) if ce < len(r) else None)
-            _add_fact(facts, seen, clean, normalized, begin_p,
-                      _parse_number(r[cb]) if cb < len(r) else None)
+            if ce is not None:
+                _add_fact(facts, seen, clean, normalized, end_p,
+                          _parse_number(r[ce]) if ce < len(r) else None)
+            if cb is not None:
+                _add_fact(facts, seen, clean, normalized, begin_p,
+                          _parse_number(r[cb]) if cb < len(r) else None)
         if ind_region:
             ii, ie, ib = ind_region
             if ii < len(r):
                 iname = (r[ii] or '').strip()
                 if iname in _INDICATOR_ALIASES:
                     inorm = _INDICATOR_ALIASES[iname]
-                    _add_fact(facts, seen_ind, iname, inorm, end_p,
-                              _parse_number(r[ie]) if ie < len(r) else None)
-                    _add_fact(facts, seen_ind, iname, inorm, begin_p,
-                              _parse_number(r[ib]) if ib < len(r) else None)
+                    if ie is not None:
+                        _add_fact(facts, seen_ind, iname, inorm, end_p,
+                                  _parse_number(r[ie]) if ie < len(r) else None)
+                    if ib is not None:
+                        _add_fact(facts, seen_ind, iname, inorm, begin_p,
+                                  _parse_number(r[ib]) if ib < len(r) else None)
     return facts
 
 
 def _parse_single_column_template(rows, year, statement_type) -> List[ParsedFact]:
     """利润表/现金流量表：科目 + 序号 + 本年累计金额/本期金额(年度值)。"""
-    value_keys = ('本年累计金额', '本期金额', '本年金额', '本期发生额', '本年数', '金额')
+    value_keys = ('本年累计金额', '本年累计数', '本年累计', '本期金额', '本年金额',
+                  '本期发生额', '本年数', '本期数', '本月金额', '金额')
+    seq_names = _SEQ_NAMES
     hdr_idx, val_col = None, None
     for i, r in enumerate(rows):
-        if '序号' in r:
+        if any(s in r for s in seq_names):
             for k in value_keys:
                 if k in r:
                     hdr_idx, val_col = i, r.index(k)
@@ -440,7 +498,8 @@ def _parse_single_column_template(rows, year, statement_type) -> List[ParsedFact
     if hdr_idx is None:
         return []
     hdr = rows[hdr_idx]
-    item_col = hdr.index('序号') - 1
+    seq_col = next((hdr.index(s) for s in seq_names if s in hdr), 1)
+    item_col = seq_col - 1
     if item_col < 0:
         item_col = 0
     facts: List[ParsedFact] = []
@@ -471,7 +530,7 @@ def parse_document(contents: List[str], doc_name: str = '', filename: str = '',
     statement_type = _detect_doc_statement_type(contents, doc_name)
     if not statement_type:
         return None
-    year = _infer_reporting_year(rows, filename)
+    year = _infer_reporting_year(rows, doc_name, filename)
     if year is None:
         return None
     full_text = '\n'.join('|'.join(r) for r in rows)
