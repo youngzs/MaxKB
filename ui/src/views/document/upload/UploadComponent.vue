@@ -156,7 +156,7 @@
         action="#"
         :auto-upload="false"
         :show-file-list="false"
-        accept=".txt, .md, .log, .docx, .pdf, .html,.zip,.xlsx,.xls,.csv"
+        accept=".txt, .md, .log, .docx, .pdf, .html,.zip,.xlsx,.xls,.csv,.png,.jpg,.jpeg,.bmp,.tif,.tiff,.webp"
         :limit="file_count_limit"
         :on-exceed="onExceed"
         :on-change="fileHandleChange"
@@ -177,7 +177,7 @@
             <p>
               {{
                 $t('views.document.upload.formats')
-              }}TXT、Markdown、PDF、DOCX、HTML、XLS、XLSX、CSV、ZIP
+              }}TXT、Markdown、PDF、DOCX、HTML、XLS、XLSX、CSV、ZIP、PNG、JPG
             </p>
           </div>
         </div>

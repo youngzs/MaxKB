@@ -56,7 +56,9 @@ export function fileType(name: string) {
   获得文件对应图片
 */
 const typeList: any = {
-  txt: ['txt', 'pdf', 'docx', 'md', 'html', 'zip', 'xlsx', 'xls', 'csv'],
+  // 图片(png/jpg/jpeg/...)后端有 ImageOcrSplitHandle 自动 OCR 入库，故纳入白名单
+  txt: ['txt', 'pdf', 'docx', 'md', 'html', 'zip', 'xlsx', 'xls', 'csv',
+        'png', 'jpg', 'jpeg', 'bmp', 'tif', 'tiff', 'webp'],
   table: ['xlsx', 'xls', 'csv'],
   QA: ['xlsx', 'csv', 'xls', 'zip'],
 }
