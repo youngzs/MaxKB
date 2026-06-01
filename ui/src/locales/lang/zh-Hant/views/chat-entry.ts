@@ -4,6 +4,9 @@ export default {
   newChat: '新對話',
   kb: {
     label: '知識庫',
+    allKb: '全庫對話',
+    allKbTip: '開啟後無需逐個勾選，自動檢索工作空間內全部知識庫（含後續新增）',
+    allKbHint: '全庫模式：正在綜合檢索全部 {n} 個知識庫',
     placeholder: '選擇知識庫（可多選）',
     emptyHint: '尚未選擇知識庫，目前回答僅基於模型自身知識。選擇一個或多個知識庫後即可基於資料問答。',
     activeHint: '已關聯 {n} 個知識庫，將綜合檢索後統一作答',

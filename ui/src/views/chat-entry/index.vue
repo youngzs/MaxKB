@@ -11,6 +11,15 @@
       </div>
 
       <div class="flex align-center chat-entry__controls">
+        <el-tooltip :content="$t('views.chatEntry.kb.allKbTip')" placement="bottom">
+          <el-switch
+            v-model="allKbMode"
+            :disabled="!backingApp || knowledgeList.length === 0"
+            class="mr-8"
+            @change="onAllKbModeChange"
+          />
+        </el-tooltip>
+        <span class="mr-12 lighter chat-entry__kb-label">{{ $t('views.chatEntry.kb.allKb') }}</span>
         <span class="mr-8 lighter chat-entry__kb-label">
           {{ $t('views.chatEntry.kb.label') }}
         </span>
@@ -22,7 +31,7 @@
           collapse-tags-tooltip
           :max-collapse-tags="2"
           :placeholder="$t('views.chatEntry.kb.placeholder')"
-          :disabled="!backingApp || knowledgeList.length === 0"
+          :disabled="allKbMode || !backingApp || knowledgeList.length === 0"
           class="chat-entry__kb-select"
           @change="onKnowledgeChange"
         >
@@ -45,6 +54,9 @@
     <div class="chat-entry__tip">
       <el-text v-if="knowledgeList.length === 0" type="warning" size="small">
         {{ $t('views.chatEntry.kb.noKnowledge') }}
+      </el-text>
+      <el-text v-else-if="allKbMode" type="success" size="small">
+        {{ $t('views.chatEntry.kb.allKbHint', { n: knowledgeList.length }) }}
       </el-text>
       <el-text v-else-if="selectedKnowledgeIds.length === 0" type="info" size="small">
         {{ $t('views.chatEntry.kb.emptyHint') }}
@@ -152,12 +164,20 @@ const DEDICATED_APP_NAME = '知识库问答助手'
 const KB_SELECTION_STORAGE_KEY = computed(
   () => `chat-entry:kb:${user.getWorkspaceId() || 'default'}`,
 )
+/** 用户本地记忆「全库对话」开关状态（按工作空间分桶，默认开启） */
+const ALL_KB_MODE_STORAGE_KEY = computed(
+  () => `chat-entry:allkb:${user.getWorkspaceId() || 'default'}`,
+)
 /** 新对话占位 id —— AiChat 约定：chatId='new' 时本次发送会先 open 再发消息 */
 const NEW_CHAT_ID = 'new'
 
 const loading = ref(false)
 const knowledgeList = ref<any[]>([])
 const selectedKnowledgeIds = ref<string[]>([])
+/** 全库对话开关：开启时自动检索工作空间内全部知识库，无需逐个勾选。默认开启。 */
+const allKbMode = ref(true)
+/** 当前工作空间下全部知识库 id */
+const allKnowledgeIds = computed<string[]>(() => knowledgeList.value.map((k) => k.id))
 // 完整的应用详情对象，直接作为 AiChat 的 applicationDetails 传入
 const backingApp = ref<any>(null)
 
@@ -223,6 +243,80 @@ function persistSelection(ids: string[]) {
   }
 }
 
+/** 读取「全库对话」开关状态，默认开启（未设置过 → true） */
+function loadStoredAllKbMode(): boolean {
+  try {
+    const raw = localStorage.getItem(ALL_KB_MODE_STORAGE_KEY.value)
+    return raw === null ? true : raw === '1'
+  } catch (e) {
+    return true
+  }
+}
+
+/** 持久化「全库对话」开关状态 */
+function persistAllKbMode(on: boolean) {
+  try {
+    localStorage.setItem(ALL_KB_MODE_STORAGE_KEY.value, on ? '1' : '0')
+  } catch (e) {
+    /* 忽略 */
+  }
+}
+
+/**
+ * 用全部知识库名称（= 企业全称）构造「企业名录」系统提示词。
+ * 注入到专用应用的 model_setting.system，让 LLM 无需检索即可回答
+ * 「共有多少家企业 / 有哪些企业 / 企业名单」这类整体性、计数类问题
+ * —— 这类问题是元数据，向量检索（局部 top-N 召回）本身无法回答。
+ */
+function buildRosterSystemPrompt(): string {
+  const names = knowledgeList.value.map((k) => k.name).filter((n) => !!n)
+  if (names.length === 0) return ''
+  const list = names.map((n, i) => `${i + 1}. ${n}`).join('\n')
+  return (
+    `本系统知识库共收录 ${names.length} 家企业的尽调资料，企业名单如下：\n${list}\n\n` +
+    `当用户询问"共有多少家企业""有哪些企业""企业名单"等整体性、计数类问题时，` +
+    `请直接依据以上名单作答（共 ${names.length} 家），无需依赖检索结果。` +
+    `回答某家企业的具体业务或财务数据时，仍以检索到的资料为准。`
+  )
+}
+
+/**
+ * 同步专用应用的系统提示词：全库模式下注入企业名录，手动模式下清空。
+ * 采用「期望值 vs 现状」对比，仅在不一致时才发起一次部分更新（PUT 只带 model_setting），
+ * 因此新增/删除知识库后首次进入会自动刷新名录，平时零写入。
+ */
+async function reconcileRosterPrompt() {
+  if (!backingApp.value) return
+  const desired = allKbMode.value ? buildRosterSystemPrompt() : ''
+  const modelSetting = { ...(backingApp.value.model_setting || {}) }
+  const current = modelSetting.system || ''
+  if (current === desired) return
+  modelSetting.system = desired
+  // no_references_prompt 为后端必填项，兜底补默认值，避免部分更新校验失败
+  if (modelSetting.no_references_prompt == null) {
+    modelSetting.no_references_prompt = '{question}'
+  }
+  // ⚠️ 后端 ApplicationEditSerializer.edit() 在更新前会无条件地
+  // 「若 instance 未带 model_id / stt / tts / long_term 则置为 None」，
+  // 所以哪怕只想改 model_setting，也必须把这些模型 id 一并回传，
+  // 否则会把专用应用的对话模型清空（导致"AI 模型未配置"）。
+  const payload: any = {
+    model_setting: modelSetting,
+    model_id: backingApp.value.model_id || '',
+  }
+  if (backingApp.value.stt_model_id) payload.stt_model_id = backingApp.value.stt_model_id
+  if (backingApp.value.tts_model_id) payload.tts_model_id = backingApp.value.tts_model_id
+  if (backingApp.value.long_term_model_id) {
+    payload.long_term_model_id = backingApp.value.long_term_model_id
+  }
+  try {
+    await ApplicationApi.putApplication(backingApp.value.id, payload)
+    backingApp.value.model_setting = modelSetting
+  } catch (e) {
+    /* 名录注入失败不阻断对话主流程 */
+  }
+}
+
 /** 加载当前工作空间下的全部知识库（folder_id = workspaceId 时后端不按目录过滤，返回全部） */
 async function loadKnowledgeList() {
   const workspaceId = user.getWorkspaceId()
@@ -252,7 +346,10 @@ function buildSimpleAppForm(modelId: string) {
       // 0.5 把很多 0.3-0.5 的真相关段落也滤掉了。
       top_n: 15,
       similarity: 0.3,
-      max_paragraph_char_number: 5000,
+      // 全库对话 + 后端 D 档「按库分配召回」最多返回约 50 段（每库保底+按分数补足），
+      // 5000 字上下文窗口会按分数截断、把"按库保底"的目标公司低分段截掉 → 单公司
+      // 问题答不出。放大到 40000(≈13K tokens) 让分配到的各库段落都能进 LLM 上下文。
+      max_paragraph_char_number: 40000,
       search_mode: 'blend',
       no_references_setting: {
         status: 'ai_questioning',
@@ -402,6 +499,25 @@ function onKnowledgeChange(ids: string[]) {
   newChat()
 }
 
+/**
+ * 切换「全库对话」开关：
+ * - 开启 → 选中全部知识库、注入企业名录系统提示；
+ * - 关闭 → 恢复本地记忆的手动选择、清空名录提示。
+ * 知识库检索范围变化必然意味着新的上下文，故同步开启新对话。
+ */
+async function onAllKbModeChange(val: boolean) {
+  persistAllKbMode(val)
+  if (val) {
+    selectedKnowledgeIds.value = [...allKnowledgeIds.value]
+  } else {
+    const stored = loadStoredSelection()
+    const available = new Set(allKnowledgeIds.value)
+    selectedKnowledgeIds.value = stored.filter((id) => available.has(id))
+  }
+  await reconcileRosterPrompt()
+  newChat()
+}
+
 function goModelManage() {
   router.push({ name: 'model' })
 }
@@ -410,10 +526,19 @@ onMounted(async () => {
   loading.value = true
   try {
     await Promise.all([loadKnowledgeList(), ensureBackingApp()])
-    // 恢复本地记忆的选择，并剔除已删除的知识库
-    const stored = loadStoredSelection()
-    const available = new Set(knowledgeList.value.map((k) => k.id))
-    selectedKnowledgeIds.value = stored.filter((id) => available.has(id))
+    const available = new Set(allKnowledgeIds.value)
+    // 恢复「全库对话」开关（默认开启）
+    allKbMode.value = loadStoredAllKbMode()
+    if (allKbMode.value) {
+      // 全库模式：自动选中全部知识库（含本次新增的库），无需逐个勾选
+      selectedKnowledgeIds.value = [...allKnowledgeIds.value]
+    } else {
+      // 手动模式：恢复本地记忆的选择，并剔除已删除的知识库
+      const stored = loadStoredSelection()
+      selectedKnowledgeIds.value = stored.filter((id) => available.has(id))
+    }
+    // 同步专用应用的企业名录系统提示词（全库模式注入 / 手动模式清空）
+    await reconcileRosterPrompt()
     await loadChatLogList()
   } finally {
     loading.value = false

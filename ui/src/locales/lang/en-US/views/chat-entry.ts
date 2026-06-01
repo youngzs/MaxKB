@@ -4,6 +4,9 @@ export default {
   newChat: 'New chat',
   kb: {
     label: 'Knowledge',
+    allKb: 'All bases',
+    allKbTip: 'Automatically search every knowledge base in this workspace (including newly added ones) — no need to pick them one by one',
+    allKbHint: 'All-bases mode: searching across all {n} knowledge bases',
     placeholder: 'Select knowledge bases (multiple)',
     emptyHint:
       'No knowledge base selected — answers come from the model alone. Select one or more knowledge bases to ground answers on your documents.',
