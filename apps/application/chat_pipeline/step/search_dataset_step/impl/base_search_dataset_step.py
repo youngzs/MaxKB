@@ -61,8 +61,13 @@ def get_embedding_id(knowledge_id_list):
 # C 档：查询拆解 —— 宽泛、跨多意图的问题拆成 N 个聚焦子查询，各自走 A+B 检索后
 #       合并去重。解决「平均向量稀释」：宽问题 embedding 是多意图均值，对任何
 #       单一意图都不强匹配，窄主题（财务/股权）会被稀释出召回。
-# 三者叠加：C 解决多意图稀释、A 解决召回量、B 解决子查询内部冗余。
-# 总开关 MMR_ENABLED / QUERY_SPLIT_ENABLED 可分别一键回退。
+# D 档：按库分配召回 —— 多库联合检索（"全库对话"）时，全局 top_n 会被段落数最多
+#       或财报雷同段最强的库霸榜，导致问"某一家公司"时该公司的段落被其它公司挤出
+#       召回（典型：问"丰县智禾资产负债率"，top30 全是其它公司的资产负债表，智禾自己
+#       的财务段一条没进）。D 档把候选池按 knowledge_id 分桶、桶内各做 MMR 取 top-k，
+#       再"每库保底 + 按分数补足"合并，保证每个相关库都有代表段落、单公司问题不被挤掉。
+# 四者叠加：C 解决多意图稀释、A 解决召回量、B 解决子查询内部冗余、D 解决多库间挤占。
+# 总开关 MMR_ENABLED / QUERY_SPLIT_ENABLED / PER_KB_ALLOCATION_ENABLED 可分别一键回退。
 # ===========================================================================
 MMR_ENABLED = True       # B 档总开关；False 时仅 A 档生效，回退纯相似度排序
 MMR_POOL_FACTOR = 4      # 候选池规模 = effective_top_n × 该系数
@@ -71,6 +76,11 @@ MMR_LAMBDA = 0.5         # MMR 相关性权重（越大越偏相关、越小越�
 QUERY_SPLIT_ENABLED = True   # C 档总开关；False 时回退单查询（A+B 不受影响）
 MAX_SUB_QUERIES = 6          # 子查询数上限 —— 防止模型拆过细导致检索次数爆炸
 MERGE_CAP = 30               # 多子查询合并去重后整体段落上限 —— 控制 context/token
+
+PER_KB_ALLOCATION_ENABLED = True  # D 档总开关；False 时多库走全局 top_n（回退到 A+B）
+PER_KB_TOP_K = 8                  # 每个库各自检索 + MMR 重排后保留的段落数
+PER_KB_FLOOR = 3                  # 每个有召回的库"保底"进入最终结果的段落数（保证不被挤掉）
+PER_KB_MERGE_CAP = 50             # D 档合并后整体段落上限 —— 控制 context/token
 
 
 def adaptive_top_n(configured_top_n, knowledge_id_list) -> int:
@@ -133,6 +143,62 @@ def mmr_filter(candidate_list, query_embedding, k: int):
     except Exception as e:  # noqa: BLE001
         maxkb_logger.warning(f'[search] MMR rerank failed, fallback to score order: {e}')
         return candidate_list[:k]
+
+
+def retrieve_per_kb(query_text, embedding_value, vector, knowledge_id_list,
+                    exclude_document_id_list, exclude_paragraph_id_list,
+                    per_kb_k: int, floor: int, cap: int, similarity: float, search_mode):
+    """D 档：多库联合检索时，对每个库各跑一次向量检索取 top per_kb_k，再合并。
+
+    为什么不是「一次大池 + 分桶」：一次全局检索只返回 top-N，段落数最多 / 财报雷同段
+    最强的库会把候选池占满，导致目标公司（如丰县智禾）的资产负债表段相似度排名不够、
+    根本进不了池子，分桶也就分不到它（实测：智禾财报齐全，却被其它公司挤出 top-448 池）。
+    改为「每库各查一次」：每个库在自己范围内取 top per_kb_k，桶内 MMR 压制单文档雷同段，
+    从根本上保证每个库的最相关段都被捞到、不受跨库竞争影响。
+
+    合并：先给每个有召回的库「保底」floor 条（保证问某家公司时该公司必有段进上下文），
+    再按 comprehensive_score 全局补足到 cap（最相关的库自然获得更多深度）。
+
+    退化保护：单个库检索/重排异常时跳过该库、不影响其它库；返回按分数降序的合并结果。
+    """
+    per_kb_lists: List[List[Dict]] = []
+    for kid in knowledge_id_list:
+        try:
+            candidate_list = vector.query(query_text, embedding_value, [kid], None,
+                                          exclude_document_id_list, exclude_paragraph_id_list, True,
+                                          per_kb_k * MMR_POOL_FACTOR if MMR_ENABLED else per_kb_k,
+                                          similarity, SearchMode(search_mode))
+            if not candidate_list:
+                continue
+            ranked = (mmr_filter(candidate_list, embedding_value, per_kb_k)
+                      if MMR_ENABLED else candidate_list[:per_kb_k])
+            if ranked:
+                per_kb_lists.append(ranked)
+        except Exception as e:  # noqa: BLE001
+            maxkb_logger.warning(f'[search] per-KB query failed for kb={kid}, skip: {e}')
+            continue
+    if not per_kb_lists:
+        return []
+    selected: Dict[str, Dict] = {}
+    # 1) 每库保底 floor 条
+    for rows in per_kb_lists:
+        for row in rows[:floor]:
+            selected.setdefault(str(row.get('paragraph_id')), row)
+            if len(selected) >= cap:
+                break
+        if len(selected) >= cap:
+            break
+    # 2) 按全局分数补足到 cap
+    if len(selected) < cap:
+        all_rows = [r for rows in per_kb_lists for r in rows]
+        all_rows.sort(key=lambda r: r.get('comprehensive_score') or 0, reverse=True)
+        for row in all_rows:
+            if len(selected) >= cap:
+                break
+            selected.setdefault(str(row.get('paragraph_id')), row)
+    # 最终按分数降序返回（to_human_message 仍会再排一次，这里保证自洽）
+    return sorted(selected.values(),
+                  key=lambda r: r.get('comprehensive_score') or 0, reverse=True)
 
 
 def split_query(query_text: str, manage) -> List[str]:
@@ -223,14 +289,20 @@ class BaseSearchDatasetStep(ISearchDatasetStep):
                                                 exclude_paragraph_id_list, effective_top_n,
                                                 similarity, search_mode)
         else:
-            # 多子查询：每个子查询各走 A+B 检索管线，结果合并去重并 cap 到 MERGE_CAP
+            # 多子查询：每个子查询各走 A+B(+D) 检索管线，结果合并去重并 cap。
+            # 多库时用更大的 PER_KB_MERGE_CAP，避免跨子查询按分数再次全局截断、
+            # 把 D 档按库保底的段落又挤掉。
             result_lists = [
                 self._retrieve_one(sub_query, embedding_model, vector, knowledge_id_list,
                                    exclude_document_id_list, exclude_paragraph_id_list,
                                    effective_top_n, similarity, search_mode)
                 for sub_query in sub_queries
             ]
-            embedding_list = merge_embedding_lists(result_lists, MERGE_CAP)
+            merge_cap = (PER_KB_MERGE_CAP
+                         if (PER_KB_ALLOCATION_ENABLED and knowledge_id_list is not None
+                             and len(knowledge_id_list) > 1)
+                         else MERGE_CAP)
+            embedding_list = merge_embedding_lists(result_lists, merge_cap)
         if embedding_list is None:
             return []
         paragraph_list = self.list_paragraph(embedding_list, vector)
@@ -241,12 +313,21 @@ class BaseSearchDatasetStep(ISearchDatasetStep):
     def _retrieve_one(query_text, embedding_model, vector, knowledge_id_list,
                       exclude_document_id_list, exclude_paragraph_id_list,
                       effective_top_n, similarity, search_mode):
-        """单条查询的检索：embed → 向量检索 → B 档 MMR 重排，返回 embedding_list。
+        """单条查询的检索：embed → 向量检索 → (D 档 按库分配 / B 档 MMR 重排)，返回 embedding_list。
 
         effective_top_n 由 A 档在外层算好后传入。MMR 关闭时直接返回向量检索结果。
         C 档多子查询时对每个子查询各调一次本方法。
+        多库（len>1）且 D 档开启时走「按库分配」分支；单库走原 A+B 路径。
         """
         embedding_value = embedding_model.embed_query(query_text)
+        multi_kb = PER_KB_ALLOCATION_ENABLED and knowledge_id_list is not None and len(knowledge_id_list) > 1
+        if multi_kb:
+            # D 档：对每个库各跑一次向量检索取 top-k，再「每库保底 + 按分数补足」合并，
+            # 保证每个库（含被全局挤掉的目标公司）的最相关段都被捞到。
+            return retrieve_per_kb(query_text, embedding_value, vector, knowledge_id_list,
+                                   exclude_document_id_list, exclude_paragraph_id_list,
+                                   PER_KB_TOP_K, PER_KB_FLOOR, PER_KB_MERGE_CAP,
+                                   similarity, search_mode)
         if MMR_ENABLED:
             # B 档：扩大候选池 → MMR 重排到 effective_top_n。
             # 候选池多召回，让"分数没那么炸但来自不同文档"的段落有机会进池，
