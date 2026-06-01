@@ -1338,6 +1338,22 @@ class DocumentSerializers(serializers.Serializer):
                     auto_extract_financial(knowledge_id, document_model_list)
                 except Exception:
                     pass
+            # 检索增强（productize）：①给段落 title 注入「公司｜类别｜期间｜文档类型」上下文标签
+            # （嵌入文本含 title，此处在 post_embedding 之前注入 → 随后嵌入即带标签，无需重嵌入）；
+            # ②按 entity 把财务指标摘要回写到各公司同名知识库。均失败不阻塞主流程。
+            if document_model_list:
+                try:
+                    from knowledge.services.retrieval_enrich import (
+                        inject_context_titles, writeback_financial_summary)
+                    from knowledge.models import FinancialStatement
+                    inject_context_titles(knowledge_id, document_model_list)
+                    entity_names = list(QuerySet(FinancialStatement).filter(
+                        document_id__in=[d.id for d in document_model_list]
+                    ).values_list('entity_name', flat=True).distinct())
+                    if entity_names:
+                        writeback_financial_summary(entity_names)
+                except Exception:
+                    pass
             # 查询文档
             query_set = QuerySet(model=Document)
             if len(document_model_list) == 0:
