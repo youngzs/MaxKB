@@ -79,8 +79,10 @@ MERGE_CAP = 30               # 多子查询合并去重后整体段落上限 —
 
 PER_KB_ALLOCATION_ENABLED = True  # D 档总开关；False 时多库走全局 top_n（回退到 A+B）
 PER_KB_TOP_K = 8                  # 每个库各自检索 + MMR 重排后保留的段落数
-PER_KB_FLOOR = 3                  # 每个有召回的库"保底"进入最终结果的段落数（保证不被挤掉）
-PER_KB_MERGE_CAP = 50             # D 档合并后整体段落上限 —— 控制 context/token
+PER_KB_FLOOR = 2                  # 每个有召回的库"保底"进入最终结果的段落数（保证不被挤掉）
+PER_KB_MERGE_CAP = 30             # D 档合并后整体段落上限 —— 控制 context/token
+#   注：单公司问题原 CAP=50/FLOOR=3 → 召回约 50 段(多为其它公司噪声、白烧 token)；
+#   降到 30/2 后单公司问题约 15-20 段、噪声减半，跨全部公司问题(14 家摘要)仍放得下。
 
 
 def adaptive_top_n(configured_top_n, knowledge_id_list) -> int:
