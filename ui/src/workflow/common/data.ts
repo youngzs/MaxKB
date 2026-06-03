@@ -898,6 +898,7 @@ export const menuNodes = [
       variableAggregationNode,
       variableSplittingNode,
       parameterExtractionNode,
+      financialCalcNode,
     ],
   },
   {
@@ -936,6 +937,7 @@ export const applicationLoopMenuNodes = [
       variableAggregationNode,
       variableSplittingNode,
       parameterExtractionNode,
+      financialCalcNode,
     ],
   },
   {

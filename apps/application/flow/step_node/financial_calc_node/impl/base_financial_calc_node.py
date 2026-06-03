@@ -8,6 +8,7 @@
       { "found": bool, "result": <number|list|dict>, "sources": [doc_id, ...], "message": str }
     上层 ai_chat_step_node / RAG 调用方可以直接把 result 引入答案、用 sources 引用文档。
 """
+import re
 from decimal import Decimal
 from typing import Optional
 
@@ -17,6 +18,37 @@ from application.flow.i_step_node import NodeResult
 from application.flow.step_node.financial_calc_node.i_financial_calc_node import IFinancialCalcNode
 from knowledge.models import FinancialFact
 from knowledge.services.financial_extractor import _normalize_to_alias
+
+
+def _annual_periods(entity, statement_type):
+    """返回该 entity 某报表类型下、形如 4 位年份的期间（过滤掉 '2022-01'/'本期金额' 等噪声）。"""
+    from knowledge.models import FinancialStatement
+    ps = set(FinancialStatement.objects.filter(
+        entity_name=entity, statement_type=statement_type).values_list('period', flat=True))
+    return sorted(p for p in ps if re.match(r'^\d{4}$', str(p or '')))
+
+
+def _fact_yuan(entity, period, line_item, statement_type, alts=None):
+    """取一条 fact 折算到元；line_item 不命中时按 alts 依次回退。返回 (Decimal|None, fact|None)。"""
+    f = _find_fact(entity, period, line_item, statement_type)
+    if f is None and alts:
+        for a in alts:
+            f = _find_fact(entity, period, a, statement_type)
+            if f is not None:
+                break
+    if f is None:
+        return None, None
+    return _to_yuan(f), f
+
+
+def _md_table(periods, metric_rows):
+    """metric_rows = [(label, [cell, ...]), ...]；生成 Markdown 表（首列=指标）。"""
+    header = '| 指标 | ' + ' | '.join(periods) + ' |'
+    sep = '| --- | ' + ' | '.join(['---'] * len(periods)) + ' |'
+    lines = [header, sep]
+    for label, cells in metric_rows:
+        lines.append('| ' + label + ' | ' + ' | '.join(cells) + ' |')
+    return '\n'.join(lines)
 
 
 def _facts_query(entity: str, period: str = '', statement_type: str = ''):
@@ -80,11 +112,35 @@ class BaseFinancialCalcNode(IFinancialCalcNode):
         self.context['message'] = details.get('message')
         self.context['data'] = details.get('data')  # 给 LLM 节点引用用
 
+    @staticmethod
+    def _resolve_entity(raw):
+        """把 entity 解析成库里真实存在的 entity_name，容忍上游抽取不准。
+        - 精确命中 → 原样返回
+        - 否则在已知 entity_name 里找"互为子串"的一个（支持直接把整句问题传进来，
+          如『丰县智禾现代农业有限公司的偿债能力分析』→ 命中『丰县智禾现代农业有限公司』）
+        这样即使 parameter-extraction 节点返回的 key 不是 entity（LLM 偶发用中文label当key
+        导致引用解析为空）或带噪声，也能稳。
+        """
+        from knowledge.models import FinancialStatement
+        raw = (raw or '').strip()
+        if not raw:
+            return raw
+        if FinancialStatement.objects.filter(entity_name=raw).exists():
+            return raw
+        names = [n for n in set(
+            FinancialStatement.objects.values_list('entity_name', flat=True)) if n]
+        # 优先最长匹配，避免短名误命中
+        for n in sorted(names, key=len, reverse=True):
+            if n in raw or raw in n:
+                return n
+        return raw
+
     def execute(self, function, entity='', period='', periods=None, line_item='',
                 line_items=None, numerator='', denominator='', statement_type='',
                 **kwargs) -> NodeResult:
         periods = periods or []
         line_items = line_items or []
+        entity = self._resolve_entity(entity)
 
         if function == 'get_fact':
             payload = self._fn_get_fact(entity, period, line_item, statement_type)
@@ -96,6 +152,14 @@ class BaseFinancialCalcNode(IFinancialCalcNode):
             payload = self._fn_sum_items(entity, period, line_items, statement_type)
         elif function == 'list_facts':
             payload = self._fn_list_facts(entity, period, statement_type)
+        elif function == 'solvency_table':
+            payload = self._fn_solvency_table(entity, periods)
+        elif function == 'profitability_table':
+            payload = self._fn_profitability_table(entity, periods)
+        elif function == 'operation_table':
+            payload = self._fn_operation_table(entity, periods)
+        elif function == 'financial_profile':
+            payload = self._fn_financial_profile(entity, periods)
         else:
             payload = {'found': False, 'result': None, 'sources': [],
                        'message': f'未知函数：{function}'}
@@ -263,6 +327,149 @@ class BaseFinancialCalcNode(IFinancialCalcNode):
             'message': 'ok',
         }
 
+    @staticmethod
+    def _num(v, fmt='{:.2f}', pct=False):
+        if v is None:
+            return 'N/A'
+        return (fmt.format(v) + '%') if pct else fmt.format(v)
+
+    @classmethod
+    def _fn_solvency_table(cls, entity, periods=None):
+        """偿债能力分析表：流动比率 / 速动比率 / 资产负债率 × 多期。
+        速动比率含减法 (流动资产合计-存货)/流动负债合计；负债/资产总计带 总计/合计 别名回退。
+        periods 为空自动取资产负债表全部年度。"""
+        if not entity:
+            return {'found': False, 'result': None, 'sources': [], 'message': '参数不全：需要 entity'}
+        periods = periods or _annual_periods(entity, 'balance_sheet')
+        if not periods:
+            return {'found': False, 'result': None, 'sources': [], 'message': f'{entity} 没有资产负债表结构化数据'}
+        rows, sources = [], set()
+        for p in periods:
+            ca, f1 = _fact_yuan(entity, p, '流动资产合计', 'balance_sheet')
+            cl, f2 = _fact_yuan(entity, p, '流动负债合计', 'balance_sheet')
+            inv, f3 = _fact_yuan(entity, p, '存货', 'balance_sheet')
+            tl, f4 = _fact_yuan(entity, p, '负债总计', 'balance_sheet', ['负债合计'])
+            ta, f5 = _fact_yuan(entity, p, '资产总计', 'balance_sheet', ['资产合计'])
+            for f in (f1, f2, f3, f4, f5):
+                if f is not None:
+                    sources.add(str(f.statement.document_id))
+            cur = float(ca / cl) if (ca is not None and cl not in (None, 0)) else None
+            quick = float((ca - (inv or Decimal(0))) / cl) if (ca is not None and cl not in (None, 0)) else None
+            debt = float(tl / ta * 100) if (tl is not None and ta not in (None, 0)) else None
+            rows.append({'period': p, 'current_ratio': cur, 'quick_ratio': quick, 'debt_asset_ratio_pct': debt})
+        table = _md_table(periods, [
+            ('流动比率', [cls._num(r['current_ratio']) for r in rows]),
+            ('速动比率', [cls._num(r['quick_ratio']) for r in rows]),
+            ('资产负债率', [cls._num(r['debt_asset_ratio_pct'], pct=True) for r in rows]),
+        ])
+        found = any(r['current_ratio'] is not None or r['debt_asset_ratio_pct'] is not None for r in rows)
+        return {'found': found, 'result': rows, 'periods': periods, 'sources': list(sources),
+                'table_md': table, 'message': 'ok' if found else f'{entity} 偿债指标结构化数据不足'}
+
+    @classmethod
+    def _fn_profitability_table(cls, entity, periods=None):
+        """盈利能力分析表：毛利率 / 净利率 / 净资产收益率(ROE) × 多期。
+        毛利率=(主营业务收入-主营业务成本)/主营业务收入；净利率=净利润/主营业务收入；
+        ROE=净利润/所有者权益合计（净利来自利润表，权益来自资产负债表）。"""
+        if not entity:
+            return {'found': False, 'result': None, 'sources': [], 'message': '参数不全：需要 entity'}
+        periods = periods or _annual_periods(entity, 'income_statement')
+        if not periods:
+            return {'found': False, 'result': None, 'sources': [], 'message': f'{entity} 没有利润表年度数据'}
+        rows, sources = [], set()
+        for p in periods:
+            rev, f1 = _fact_yuan(entity, p, '主营业务收入', 'income_statement', ['营业收入'])
+            cost, f2 = _fact_yuan(entity, p, '主营业务成本', 'income_statement', ['营业成本'])
+            ni, f3 = _fact_yuan(entity, p, '净利润', 'income_statement')
+            eq, f4 = _fact_yuan(entity, p, '所有者权益合计', 'balance_sheet',
+                                ['所有者权益（或股东权益）合计', '股东权益合计'])
+            for f in (f1, f2, f3, f4):
+                if f is not None:
+                    sources.add(str(f.statement.document_id))
+            gross = float((rev - cost) / rev * 100) if (rev not in (None, 0) and cost is not None) else None
+            net = float(ni / rev * 100) if (ni is not None and rev not in (None, 0)) else None
+            roe = float(ni / eq * 100) if (ni is not None and eq not in (None, 0)) else None
+            rows.append({'period': p, 'gross_margin_pct': gross, 'net_margin_pct': net, 'roe_pct': roe})
+        table = _md_table(periods, [
+            ('毛利率', [cls._num(r['gross_margin_pct'], pct=True) for r in rows]),
+            ('净利率', [cls._num(r['net_margin_pct'], pct=True) for r in rows]),
+            ('净资产收益率(ROE)', [cls._num(r['roe_pct'], pct=True) for r in rows]),
+        ])
+        found = any(r['net_margin_pct'] is not None or r['gross_margin_pct'] is not None for r in rows)
+        return {'found': found, 'result': rows, 'periods': periods, 'sources': list(sources),
+                'table_md': table, 'message': 'ok' if found else f'{entity} 盈利指标结构化数据不足'}
+
+    @classmethod
+    def _fn_operation_table(cls, entity, periods=None):
+        """营运能力分析表：应收账款周转率 / 存货周转率 / 总资产周转率 × 多期（期末值近似）。
+        应收周转=主营业务收入/应收账款；存货周转=主营业务成本/存货；总资产周转=主营业务收入/资产总计。"""
+        if not entity:
+            return {'found': False, 'result': None, 'sources': [], 'message': '参数不全：需要 entity'}
+        periods = periods or _annual_periods(entity, 'income_statement')
+        if not periods:
+            return {'found': False, 'result': None, 'sources': [], 'message': f'{entity} 没有利润表年度数据'}
+        rows, sources = [], set()
+        for p in periods:
+            rev, f1 = _fact_yuan(entity, p, '主营业务收入', 'income_statement', ['营业收入'])
+            cost, f2 = _fact_yuan(entity, p, '主营业务成本', 'income_statement', ['营业成本'])
+            ar, f3 = _fact_yuan(entity, p, '应收账款', 'balance_sheet')
+            inv, f4 = _fact_yuan(entity, p, '存货', 'balance_sheet')
+            ta, f5 = _fact_yuan(entity, p, '资产总计', 'balance_sheet', ['资产合计'])
+            for f in (f1, f2, f3, f4, f5):
+                if f is not None:
+                    sources.add(str(f.statement.document_id))
+            ar_turn = float(rev / ar) if (rev is not None and ar not in (None, 0)) else None
+            inv_turn = float(cost / inv) if (cost is not None and inv not in (None, 0)) else None
+            ta_turn = float(rev / ta) if (rev is not None and ta not in (None, 0)) else None
+            rows.append({'period': p, 'ar_turnover': ar_turn, 'inv_turnover': inv_turn, 'ta_turnover': ta_turn})
+        table = _md_table(periods, [
+            ('应收账款周转率(次)', [cls._num(r['ar_turnover']) for r in rows]),
+            ('存货周转率(次)', [cls._num(r['inv_turnover']) for r in rows]),
+            ('总资产周转率(次)', [cls._num(r['ta_turnover']) for r in rows]),
+        ])
+        found = any(r['ar_turnover'] is not None or r['ta_turnover'] is not None for r in rows)
+        return {'found': found, 'result': rows, 'periods': periods, 'sources': list(sources),
+                'table_md': table, 'message': 'ok' if found else f'{entity} 营运指标结构化数据不足'}
+
+    @classmethod
+    def _fn_financial_profile(cls, entity, periods=None):
+        """企业财务综合画像：规模(资产总计/营收/净利润) + 偿债 + 盈利 + 营运 多表合一。"""
+        if not entity:
+            return {'found': False, 'result': None, 'sources': [], 'message': '参数不全：需要 entity'}
+        bs_periods = _annual_periods(entity, 'balance_sheet')
+        # 规模表（按资产负债表年度）
+        size_rows, sources = [], set()
+        for p in (bs_periods or []):
+            ta, f1 = _fact_yuan(entity, p, '资产总计', 'balance_sheet', ['资产合计'])
+            rev, f2 = _fact_yuan(entity, p, '主营业务收入', 'income_statement', ['营业收入'])
+            ni, f3 = _fact_yuan(entity, p, '净利润', 'income_statement')
+            for f in (f1, f2, f3):
+                if f is not None:
+                    sources.add(str(f.statement.document_id))
+            size_rows.append({'period': p, 'ta': ta, 'rev': rev, 'ni': ni})
+        size_md = _md_table(bs_periods or [], [
+            ('资产总计', [_format_amount(r['ta']) for r in size_rows]),
+            ('营业收入', [_format_amount(r['rev']) for r in size_rows]),
+            ('净利润', [_format_amount(r['ni']) for r in size_rows]),
+        ]) if bs_periods else '（无年度数据）'
+        solv = cls._fn_solvency_table(entity)
+        prof = cls._fn_profitability_table(entity)
+        oper = cls._fn_operation_table(entity)
+        for sub in (solv, prof, oper):
+            for s in (sub.get('sources') or []):
+                sources.add(s)
+        combined = (
+            f"### {entity} 财务综合画像\n\n"
+            f"**一、规模指标**\n{size_md}\n\n"
+            f"**二、偿债能力**\n{solv.get('table_md', '（数据不足）')}\n\n"
+            f"**三、盈利能力**\n{prof.get('table_md', '（数据不足）')}\n\n"
+            f"**四、营运能力**\n{oper.get('table_md', '（数据不足）')}"
+        )
+        found = bool(bs_periods) or solv.get('found') or prof.get('found')
+        return {'found': found, 'result': {'size': size_rows}, 'periods': bs_periods,
+                'sources': list(sources), 'table_md': combined,
+                'message': 'ok' if found else f'{entity} 财务结构化数据不足'}
+
     # ---------- 文本化（供 LLM 节点引用） ----------
 
     @staticmethod
@@ -296,6 +503,8 @@ class BaseFinancialCalcNode(IFinancialCalcNode):
             return (f"{payload.get('period')} 期共 {payload.get('count')} 个科目：\n"
                     + '\n'.join(f"- {it['line_item']}：{it.get('amount_display','N/A')}"
                                 for it in items[:50]))
+        if fn in ('solvency_table', 'profitability_table', 'operation_table', 'financial_profile'):
+            return payload.get('table_md') or ''
         return ''
 
     def get_details(self, index: int, **kwargs):

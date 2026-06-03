@@ -28,7 +28,7 @@
       <div v-else>
         <el-button
           class="ml-8"
-          v-if="permissionPrecise.edit(id)"
+          v-if="false"
           @click="openTemplateStoreDialog()"
         >
           <AppIcon iconName="app-template-center" class="mr-4" />

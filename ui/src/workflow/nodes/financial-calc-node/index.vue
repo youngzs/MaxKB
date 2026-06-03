@@ -25,6 +25,10 @@
             <el-option label="ratio — 比率（如流动比率）" value="ratio" />
             <el-option label="sum_items — 多科目求和" value="sum_items" />
             <el-option label="list_facts — 列出某主体某期全部已抽科目" value="list_facts" />
+            <el-option label="solvency_table — 偿债能力分析表（流动/速动/资产负债率 × 多期）" value="solvency_table" />
+            <el-option label="profitability_table — 盈利能力分析表（毛利率/净利率/ROE × 多期）" value="profitability_table" />
+            <el-option label="operation_table — 营运能力分析表（应收/存货/总资产周转率 × 多期）" value="operation_table" />
+            <el-option label="financial_profile — 企业财务综合画像（规模+偿债+盈利+营运）" value="financial_profile" />
           </el-select>
         </el-form-item>
 
@@ -36,7 +40,7 @@
           <el-input v-model="form_data.period" placeholder="年度 2024 / 季度 2024Q1 / 月度 2024-03" />
         </el-form-item>
 
-        <el-form-item label="多个报告期 (periods)" v-if="form_data.function === 'compare_periods'">
+        <el-form-item label="多个报告期 (periods，分析表留空=自动取全部年度)" v-if="['compare_periods','solvency_table','profitability_table','operation_table','financial_profile'].includes(form_data.function)">
           <el-input v-model="periodsText" type="textarea" :rows="3" placeholder="每行一个，如:&#10;2023&#10;2024&#10;2025" @blur="onPeriodsBlur" />
         </el-form-item>
 
@@ -55,7 +59,7 @@
           <el-input v-model="lineItemsText" type="textarea" :rows="3" placeholder="每行一个，如:&#10;货币资金&#10;应收账款&#10;存货" @blur="onLineItemsBlur" />
         </el-form-item>
 
-        <el-form-item label="报表类型 (可选)" v-if="form_data.function !== 'list_facts'">
+        <el-form-item label="报表类型 (可选)" v-if="!['list_facts','solvency_table','profitability_table','operation_table','financial_profile'].includes(form_data.function)">
           <el-select v-model="form_data.statement_type" clearable placeholder="不限" style="width: 100%">
             <el-option label="资产负债表" value="balance_sheet" />
             <el-option label="利润表" value="income_statement" />

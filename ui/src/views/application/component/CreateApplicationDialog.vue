@@ -45,7 +45,7 @@
       >
         <div class="w-full">
           <el-row :gutter="16">
-            <el-col :span="8">
+            <el-col :span="8" class="mb-16">
               <CardBox
                 :title="$t('views.application.form.appTemplate.blankApp.title')"
                 description="不使用模板,从零搭建工作流。"
@@ -59,7 +59,7 @@
                 </template>
               </CardBox>
             </el-col>
-            <el-col :span="8">
+            <el-col :span="8" class="mb-16">
               <CardBox
                 :title="$t('views.application.form.appTemplate.assistantApp.title')"
                 :description="$t('views.application.form.appTemplate.assistantApp.description')"
@@ -73,7 +73,7 @@
                 </template>
               </CardBox>
             </el-col>
-            <el-col :span="8">
+            <el-col :span="8" class="mb-16">
               <CardBox
                 title="财务问答"
                 description="检索审计报告/财务报表,精确引用数字与来源。"
@@ -85,6 +85,31 @@
                 <template #icon>
                   <AppIcon iconName="app-finance" style="font-size: 32px; color: #4CAF50" />
                 </template>
+              </CardBox>
+            </el-col>
+            <el-col :span="8" class="mb-16">
+              <CardBox title="偿债能力分析" description="一键算流动比率/速动比率/资产负债率表(结构化精确计算)" shadow="never" class="template-radio-card cursor" :class="appTemplate === 'solvency' ? 'border-active' : ''" @click="selectedType('solvency')">
+                <template #icon><AppIcon iconName="app-finance" style="font-size: 32px; color: #2196F3" /></template>
+              </CardBox>
+            </el-col>
+            <el-col :span="8" class="mb-16">
+              <CardBox title="盈利能力分析" description="一键算毛利率/净利率/净资产收益率(ROE)表" shadow="never" class="template-radio-card cursor" :class="appTemplate === 'profitability' ? 'border-active' : ''" @click="selectedType('profitability')">
+                <template #icon><AppIcon iconName="app-finance" style="font-size: 32px; color: #FF9800" /></template>
+              </CardBox>
+            </el-col>
+            <el-col :span="8" class="mb-16">
+              <CardBox title="营运能力分析" description="一键算应收/存货/总资产周转率表" shadow="never" class="template-radio-card cursor" :class="appTemplate === 'operation' ? 'border-active' : ''" @click="selectedType('operation')">
+                <template #icon><AppIcon iconName="app-finance" style="font-size: 32px; color: #9C27B0" /></template>
+              </CardBox>
+            </el-col>
+            <el-col :span="8" class="mb-16">
+              <CardBox title="企业财务综合画像" description="规模+偿债+盈利+营运四组表+综合点评,尽调一页纸" shadow="never" class="template-radio-card cursor" :class="appTemplate === 'profile' ? 'border-active' : ''" @click="selectedType('profile')">
+                <template #icon><AppIcon iconName="app-finance" style="font-size: 32px; color: #F44336" /></template>
+              </CardBox>
+            </el-col>
+            <el-col :span="8" class="mb-16">
+              <CardBox title="尽调要点问答" description="基于知识库回答工商/征信/担保/财务尽调(用前选库)" shadow="never" class="template-radio-card cursor" :class="appTemplate === 'duediligence' ? 'border-active' : ''" @click="selectedType('duediligence')">
+                <template #icon><AppIcon iconName="app-template-center" style="font-size: 32px; color: #00897B" /></template>
               </CardBox>
             </el-col>
           </el-row>

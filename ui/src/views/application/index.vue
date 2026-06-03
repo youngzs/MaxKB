@@ -79,7 +79,7 @@
           <div v-if="isBatch === false">
             <el-button
               class="ml-8"
-              v-if="permissionPrecise.create()"
+              v-if="false"
               @click="openTemplateStoreDialog()"
             >
               <AppIcon iconName="app-template-center" class="mr-4"/>
