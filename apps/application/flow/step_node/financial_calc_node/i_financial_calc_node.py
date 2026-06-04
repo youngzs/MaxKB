@@ -34,6 +34,7 @@ ALL_FUNCTIONS = (
     'profitability_table',  # 盈利能力分析表：毛利率/净利率/ROE × 多期
     'operation_table',      # 营运能力分析表：应收/存货/总资产周转率 × 多期
     'financial_profile',    # 企业财务综合画像：规模+偿债+盈利+营运 多表合一
+    'statement_table',      # 完整原始报表：资产负债表/利润表/现金流量表 逐行 × 多期
 )
 
 

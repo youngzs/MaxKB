@@ -29,6 +29,7 @@
             <el-option label="profitability_table — 盈利能力分析表（毛利率/净利率/ROE × 多期）" value="profitability_table" />
             <el-option label="operation_table — 营运能力分析表（应收/存货/总资产周转率 × 多期）" value="operation_table" />
             <el-option label="financial_profile — 企业财务综合画像（规模+偿债+盈利+营运）" value="financial_profile" />
+            <el-option label="statement_table — 完整原始报表（资产负债表/利润表 逐行×多期）" value="statement_table" />
           </el-select>
         </el-form-item>
 
@@ -40,7 +41,7 @@
           <el-input v-model="form_data.period" placeholder="年度 2024 / 季度 2024Q1 / 月度 2024-03" />
         </el-form-item>
 
-        <el-form-item label="多个报告期 (periods，分析表留空=自动取全部年度)" v-if="['compare_periods','solvency_table','profitability_table','operation_table','financial_profile'].includes(form_data.function)">
+        <el-form-item label="多个报告期 (periods，分析表/原始报表留空=自动取全部年度)" v-if="['compare_periods','solvency_table','profitability_table','operation_table','financial_profile','statement_table'].includes(form_data.function)">
           <el-input v-model="periodsText" type="textarea" :rows="3" placeholder="每行一个，如:&#10;2023&#10;2024&#10;2025" @blur="onPeriodsBlur" />
         </el-form-item>
 

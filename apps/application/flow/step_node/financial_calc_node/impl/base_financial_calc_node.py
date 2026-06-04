@@ -160,6 +160,8 @@ class BaseFinancialCalcNode(IFinancialCalcNode):
             payload = self._fn_operation_table(entity, periods)
         elif function == 'financial_profile':
             payload = self._fn_financial_profile(entity, periods)
+        elif function == 'statement_table':
+            payload = self._fn_statement_table(entity, statement_type, periods)
         else:
             payload = {'found': False, 'result': None, 'sources': [],
                        'message': f'未知函数：{function}'}
@@ -470,6 +472,43 @@ class BaseFinancialCalcNode(IFinancialCalcNode):
                 'sources': list(sources), 'table_md': combined,
                 'message': 'ok' if found else f'{entity} 财务结构化数据不足'}
 
+    @classmethod
+    def _fn_statement_table(cls, entity, statement_type='balance_sheet', periods=None):
+        """完整原始报表：把某报表类型(资产负债表/利润表/现金流量表)逐行科目 × 多期透视成 Markdown 表。
+        periods 为空自动取该报表全部年度；保留科目首次出现顺序。"""
+        from knowledge.models import FinancialFact
+        if not entity:
+            return {'found': False, 'result': None, 'sources': [], 'message': '参数不全：需要 entity'}
+        st = statement_type or 'balance_sheet'
+        periods = periods or _annual_periods(entity, st)
+        if not periods:
+            return {'found': False, 'result': None, 'sources': [],
+                    'message': f'{entity} 没有{st}年度数据'}
+        order, seen, data, sources = [], set(), {}, set()
+        for p in periods:
+            facts = list(FinancialFact.objects.filter(
+                statement__entity_name=entity, statement__period=p,
+                statement__statement_type=st).select_related('statement'))
+            pm = {}
+            for f in facts:
+                li = f.line_item_normalized
+                if li and li not in seen:
+                    seen.add(li); order.append(li)
+                v = _to_yuan(f)
+                pm[li] = _format_amount(v)
+                sources.add(str(f.statement.document_id))
+            data[p] = pm
+        title = {'balance_sheet': '资产负债表', 'income_statement': '利润表',
+                 'cash_flow': '现金流量表'}.get(st, st)
+        header = '| 科目 | ' + ' | '.join(periods) + ' |'
+        sep = '| --- | ' + ' | '.join(['---'] * len(periods)) + ' |'
+        body = ['| ' + li + ' | ' + ' | '.join(data[p].get(li, '') for p in periods) + ' |'
+                for li in order]
+        table = f"**{entity} {title}**\n" + '\n'.join([header, sep] + body)
+        return {'found': bool(order), 'result': {'order': order, 'data': data}, 'periods': periods,
+                'sources': list(sources), 'table_md': table,
+                'message': 'ok' if order else f'{entity} {title}无数据'}
+
     # ---------- 文本化（供 LLM 节点引用） ----------
 
     @staticmethod
@@ -503,7 +542,8 @@ class BaseFinancialCalcNode(IFinancialCalcNode):
             return (f"{payload.get('period')} 期共 {payload.get('count')} 个科目：\n"
                     + '\n'.join(f"- {it['line_item']}：{it.get('amount_display','N/A')}"
                                 for it in items[:50]))
-        if fn in ('solvency_table', 'profitability_table', 'operation_table', 'financial_profile'):
+        if fn in ('solvency_table', 'profitability_table', 'operation_table',
+                  'financial_profile', 'statement_table'):
             return payload.get('table_md') or ''
         return ''
 
